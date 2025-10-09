@@ -1,0 +1,58 @@
+services:
+  nginx:
+    image: nginx:1.26.3
+    platform: linux/amd64
+    container_name: wordpress_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./wordpress:/var/www/html
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - php
+    networks:
+      - wordpress_network
+    restart: unless-stopped
+
+  php:
+    build: ./php
+    platform: linux/amd64
+    container_name: wordpress_php
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./php/php.ini:/usr/local/etc/php/php.ini
+      - ./logs/php:/var/log/php
+    depends_on:
+      - mysql
+    networks:
+      - wordpress_network
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:5.7
+    platform: linux/amd64
+    container_name: wordpress_mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/conf.d/my.cnf
+      - ./logs/mysql:/var/log/mysql
+    networks:
+      - wordpress_network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  wordpress_network:
+    driver: bridge

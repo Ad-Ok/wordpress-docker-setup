@@ -1,0 +1,43 @@
+# Docker
+.env
+.env.local
+.env.production
+
+# WordPress archives
+*.tar.gz
+*.zip
+
+# Logs
+logs/
+*.log
+
+# MySQL data (if not using named volume)
+mysql/data/
+
+# Node modules (if any)
+node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# WordPress specific
+wp-config.php.bak
+wp-content/uploads/ (if you want to exclude uploads)
+wp-content/cache/
+
+# Docker volumes (optional - comment out if you want to keep data)
+# mysql_data/
+
+# WordPress core files (temporary - will be restructured)
+wordpress/
