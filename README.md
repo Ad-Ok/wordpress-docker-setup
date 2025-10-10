@@ -113,6 +113,16 @@ docker compose down
 - **Пароль:** wordpress_password
 - **Root пароль:** root_password_123
 
+### Доступ к phpMyAdmin
+
+Для удобного управления базой данных через веб-интерфейс доступен phpMyAdmin.
+
+**URL:** `http://pma.localhost:8080`
+
+**Логин:** `wordpress_user` (или `root` для полного доступа)  
+**Пароль:** `wordpress_password` (или `root_password_123` для root)
+
+
 ### Полезные команды
 
 ```bash
