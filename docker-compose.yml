@@ -1,7 +1,6 @@
 services:
   nginx:
     image: nginx:1.26.3
-    platform: linux/amd64
     container_name: wordpress_nginx
     ports:
       - "80:80"
@@ -19,7 +18,6 @@ services:
 
   php:
     build: ./php
-    platform: linux/amd64
     container_name: wordpress_php
     volumes:
       - ./wordpress:/var/www/html
