@@ -32,16 +32,27 @@ curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.pha
 
 ```bash
 chmod +x wp-cli.phar
-mv wp-cli.phar /home/ваш_логин/wp-cli.phar
+mv wp-cli.phar ~/wp-cli.phar
 ```
 
 ### Добавьте алиас для удобства
 
-Отредактируйте файл `~/.bashrc`:
+**ВАЖНО**: На Sprinthost алиасы нужно добавлять в `~/.bash_profile`, а не в `~/.bashrc`
 
 ```bash
-echo 'alias wp="php /home/ваш_логин/wp-cli.phar"' >> ~/.bashrc
-source ~/.bashrc
+echo 'alias wp="/usr/local/bin/php ~/wp-cli.phar"' >> ~/.bash_profile
+source ~/.bash_profile
+```
+
+### Альтернативный способ (если PHP в другом месте):
+
+```bash
+# Найдите путь к PHP
+which php
+
+# Добавьте алиас с полным путем
+echo 'alias wp="/usr/local/bin/php ~/wp-cli.phar"' >> ~/.bash_profile
+source ~/.bash_profile
 ```
 
 ---
@@ -51,15 +62,54 @@ source ~/.bashrc
 ### Перейдите в директорию WordPress
 
 ```bash
-cd public_html
+cd domains/ваш_домен/public_html
 ```
+
+*Замените `ваш_домен` на ваше доменное имя*
 
 ### Проверьте работу WP-CLI
 
 ```bash
-wp core version
-wp plugin list
-wp db check
+# Используйте полный путь (самый надежный способ)
+/usr/local/bin/php ~/wp-cli.phar --version
+
+# Или перейдите в директорию WordPress и используйте полный путь
+cd domains/ваш_домен/public_html
+/usr/local/bin/php ~/wp-cli.phar core version
+/usr/local/bin/php ~/wp-cli.phar plugin list
+/usr/local/bin/php ~/wp-cli.phar db check
+```
+
+**Примечание**: На Sprinthost SSH сессии не всегда загружают `.bash_profile`, поэтому рекомендуется использовать полный путь к WP-CLI.
+
+---
+
+## 🚀 Установка WordPress с помощью WP-CLI
+
+Если WordPress еще не установлен, вот как установить его с помощью WP-CLI:
+
+### Шаг 1: Перейдите в директорию сайта
+
+```bash
+cd domains/ваш_домен/public_html
+```
+
+### Шаг 2: Скачайте WordPress
+
+```bash
+/usr/local/bin/php ~/wp-cli.phar core download --locale=ru_RU
+```
+
+### Шаг 3: Создайте конфигурационный файл
+
+```bash
+/usr/local/bin/php ~/wp-cli.phar config create --dbname=имя_базы --dbuser=пользователь_базы --dbpass=пароль_базы --dbhost=localhost
+```
+
+### Шаг 4: Установите WordPress
+
+```bash
+/usr/local/bin/php ~/wp-cli.phar core install --url=ваш_домен --title="Название сайта" --admin_user=admin --admin_password=пароль --admin_email=email@example.com
 ```
 
 ---
