@@ -448,9 +448,68 @@ echo -e "${GREEN}✓${NC} Deployment marker created"
 echo ""
 
 # ============================================
-# STEP 9: Verification
+# STEP 9: Setup HTTP Authentication for DEV
 # ============================================
-echo -e "${BLUE}═══ STEP 9/9: Verifying Installation ═══${NC}"
+if [ "$ENVIRONMENT" == "dev" ]; then
+    echo -e "${BLUE}═══ STEP 9/10: Setting up HTTP Authentication ═══${NC}"
+    echo ""
+    
+    echo "Creating htpasswd protection for dev environment..."
+    
+    # Создаём .htpasswd файл с учётными данными test/test
+    # Пароль "test" захеширован с помощью Apache htpasswd
+    ssh "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+# Переходим в webroot
+cd "${WEBROOT}"
+
+# Создаём .htpasswd файл с пользователем test и паролем test
+# Хеш сгенерирован: htpasswd -nb test test
+echo 'test:$apr1$ruca84Hq$dTCYlmXX7dkzByffVd4DT.' > .htpasswd
+
+# Устанавливаем правильные права доступа
+chmod 644 .htpasswd
+
+echo "✓ .htpasswd file created"
+
+# Создаём .htaccess для базовой аутентификации
+cat > .htaccess << 'EOF'
+# HTTP Basic Authentication for DEV environment
+AuthType Basic
+AuthName "Development Site - Restricted Access"
+AuthUserFile ${WEBROOT}/.htpasswd
+Require valid-user
+
+# WordPress rules (below authentication)
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+EOF
+
+# Заменяем ${WEBROOT} на реальный путь
+sed -i "s|\${WEBROOT}|${WEBROOT}|g" .htaccess
+
+echo "✓ .htaccess file created with authentication"
+ENDSSH
+    
+    echo -e "${GREEN}✓${NC} HTTP Authentication configured"
+    echo -e "  Username: ${YELLOW}test${NC}"
+    echo -e "  Password: ${YELLOW}test${NC}"
+    echo ""
+else
+    echo -e "${BLUE}═══ STEP 9/10: Skipping HTTP Authentication (PROD) ═══${NC}"
+    echo ""
+fi
+
+# ============================================
+# STEP 10: Verification
+# ============================================
+echo -e "${BLUE}═══ STEP 10/10: Verifying Installation ═══${NC}"
 echo ""
 
 VERIFICATION=$(ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH
@@ -512,10 +571,20 @@ echo -e "  Location: ${WEBROOT}"
 echo -e "  Site URL: ${SITE_URL}"
 echo ""
 
+if [ "$ENVIRONMENT" == "dev" ]; then
+    echo -e "${YELLOW}🔒 HTTP Authentication enabled:${NC}"
+    echo -e "  Username: ${GREEN}test${NC}"
+    echo -e "  Password: ${GREEN}test${NC}"
+    echo ""
+fi
+
 echo -e "${BLUE}Next steps:${NC}"
 echo "  1. Verify wp-config.php database settings"
 echo "  2. Run database import if needed"
 echo "  3. Test the site: ${SITE_URL}"
+if [ "$ENVIRONMENT" == "dev" ]; then
+    echo "     (use test/test for HTTP authentication)"
+fi
 echo "  4. Use regular deploy scripts for future updates"
 echo ""
 

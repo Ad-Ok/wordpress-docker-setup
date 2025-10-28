@@ -11,6 +11,11 @@
 7. [Smoke Tests](#smoke-tests)
 8. [Rollback](#rollback)
 9. [Hotfix](#hotfix)
+10. [🔒 Безопасность DEV](#безопасность-dev)
+
+**📚 Дополнительные документы:**
+- [DEPLOYMENT_CHEATSHEET.md](DEPLOYMENT_CHEATSHEET.md) — быстрая справка по командам
+- [DEV_SECURITY.md](DEV_SECURITY.md) — подробное руководство по безопасности DEV-окружения
 
 ---
 
@@ -167,7 +172,29 @@ git push origin main
 5. ✓ Загрузка WordPress (rsync)
 6. ✓ Инициализация Git
 7. ✓ Настройка прав
-8. ✓ Верификация
+8. ✓ **Настройка HTTP Basic Authentication (test/test)** 🔒
+9. ✓ Верификация
+
+**🔒 HTTP Authentication:**
+При деплое на DEV автоматически создаётся базовая HTTP-аутентификация:
+- Username: `test`
+- Password: `test`
+- Защищает сайт от индексации и случайного доступа
+
+Управление аутентификацией:
+```bash
+# Проверить статус
+./deployment-scripts/utils/manage-htpasswd.sh status
+
+# Изменить пароль
+./deployment-scripts/utils/manage-htpasswd.sh change
+
+# Временно отключить
+./deployment-scripts/utils/manage-htpasswd.sh disable
+
+# Включить обратно
+./deployment-scripts/utils/manage-htpasswd.sh enable
+```
 
 ### PROD окружение
 

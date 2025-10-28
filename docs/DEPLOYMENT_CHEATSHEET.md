@@ -248,7 +248,7 @@ tail -f /var/log/php-fpm/error.log
 
 | Скрипт | Когда | Метод | Скорость | Проверки |
 |--------|-------|-------|----------|----------|
-| `initial-deploy.sh` | Первый раз | rsync | 🐢 5-10 мин | Базовые |
+| `initial-deploy.sh` | Первый раз | rsync | 🐢 5-10 мин | Базовые + 🔒 htpasswd (DEV) |
 | `deploy-prod.sh` | Обновления PROD | git pull | ⚡ 30 сек | Полные |
 | `deploy-dev.sh` | Обновления DEV | git pull | ⚡ 10 сек | Минимальные |
 | `hotfix.sh` | Срочные фиксы | git cherry-pick | ⚡ 1 мин | Средние |
@@ -295,6 +295,27 @@ ssh user@server "ls -lth /path/to/backups | head -10"
 ssh user@server "du -sh /path/to/site"
 ```
 
+## 🔒 HTTP Authentication (DEV)
+
+```bash
+# Проверить статус защиты
+./deployment-scripts/utils/manage-htpasswd.sh status
+
+# Изменить пароль
+./deployment-scripts/utils/manage-htpasswd.sh change
+
+# Отключить защиту (временно)
+./deployment-scripts/utils/manage-htpasswd.sh disable
+
+# Включить обратно
+./deployment-scripts/utils/manage-htpasswd.sh enable
+```
+
+**По умолчанию для DEV:**
+- Username: `test`
+- Password: `test`
+
 ---
 
 **🚀 Happy Deploying!**
+
