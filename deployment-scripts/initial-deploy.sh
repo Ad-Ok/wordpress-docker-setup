@@ -41,8 +41,11 @@ else
     exit 1
 fi
 
+# Uppercase для вывода (совместимость с bash 3)
+ENV_UPPER=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+
 echo -e "${MAGENTA}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${MAGENTA}║         INITIAL DEPLOYMENT - ${ENVIRONMENT^^}                 ║${NC}"
+echo -e "${MAGENTA}║         INITIAL DEPLOYMENT - ${ENV_UPPER}                 ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -52,9 +55,9 @@ echo ""
 echo -e "${YELLOW}⚠️  WARNING: Initial Deployment${NC}"
 echo ""
 echo "This script will:"
-echo "  • Upload FULL WordPress installation"
-echo "  • Upload ALL wp-content (themes, plugins, uploads)"
-echo "  • Initialize Git repository on server"
+echo "  • Clone Git repository on server"
+echo "  • Upload WordPress core files (excluding wp-content)"
+echo "  • Upload wp-content/uploads separately"
 echo "  • Setup proper permissions"
 echo ""
 echo -e "${RED}This should only be used for FIRST deployment!${NC}"
@@ -199,77 +202,9 @@ echo -e "${GREEN}✓${NC} Server directories ready"
 echo ""
 
 # ============================================
-# STEP 5: Upload WordPress Files via rsync
+# STEP 5: Clone Git Repository on Server
 # ============================================
-echo -e "${BLUE}═══ STEP 5/8: Uploading WordPress Files ═══${NC}"
-echo ""
-
-echo "This may take several minutes depending on size..."
-echo ""
-
-# Проверяем наличие .deployignore
-EXCLUDE_FILE="${LOCAL_PROJECT_ROOT}/.deployignore"
-TEMP_EXCLUDE_FILE=""
-
-if [ -f "$EXCLUDE_FILE" ]; then
-    echo "Using .deployignore file"
-else
-    echo "Creating temporary exclude list..."
-    TEMP_EXCLUDE_FILE=$(mktemp)
-    cat > "$TEMP_EXCLUDE_FILE" << 'EOF'
-.git/
-.gitignore
-.gitmodules
-.DS_Store
-.env
-.env.*
-node_modules/
-*.log
-logs/
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.htpasswd
-deployment-scripts/config.sh
-backups/
-mysql/
-docker-compose.yml
-README.md
-docs/
-EOF
-    EXCLUDE_FILE="$TEMP_EXCLUDE_FILE"
-fi
-
-# Upload WordPress core + wp-content
-echo "Uploading WordPress files..."
-rsync -avz --progress \
-    --exclude-from="$EXCLUDE_FILE" \
-    "${LOCAL_PROJECT_ROOT}/wordpress/" \
-    "${SSH_USER}@${SSH_HOST}:${WEBROOT}/"
-
-# Проверяем результат
-if [ $? -eq 0 ]; then
-    echo ""
-    echo -e "${GREEN}✓${NC} WordPress files uploaded successfully"
-else
-    echo ""
-    echo -e "${RED}✗ File upload failed${NC}"
-    [ -n "$TEMP_EXCLUDE_FILE" ] && rm -f "$TEMP_EXCLUDE_FILE"
-    send_notification "❌ Initial deployment failed: File upload error"
-    exit 1
-fi
-
-# Удаляем временный файл если создавали
-[ -n "$TEMP_EXCLUDE_FILE" ] && rm -f "$TEMP_EXCLUDE_FILE"
-
-echo ""
-
-# ============================================
-# STEP 6: Инициализация Git на сервере
-# ============================================
-echo -e "${BLUE}═══ STEP 6/8: Initializing Git Repository ═══${NC}"
+echo -e "${BLUE}═══ STEP 5/8: Cloning Git Repository on Server ═══${NC}"
 echo ""
 
 # Получаем URL репозитория из локального .git
@@ -277,55 +212,190 @@ cd "${LOCAL_PROJECT_ROOT}/wordpress"
 GIT_REMOTE_URL=$(git config --get remote.origin.url || echo "")
 
 if [ -z "$GIT_REMOTE_URL" ]; then
-    echo -e "${YELLOW}⚠️  WARNING: Could not determine Git remote URL${NC}"
-    echo "You'll need to set it up manually on the server."
-    GIT_SETUP="manual"
-else
-    echo "Git remote URL: $GIT_REMOTE_URL"
-    GIT_SETUP="auto"
+    echo -e "${RED}✗ ERROR: Could not determine Git remote URL${NC}"
+    echo "Please ensure remote.origin.url is set in ${LOCAL_PROJECT_ROOT}/wordpress/.git/config"
+    send_notification "❌ Initial deployment failed: Git remote URL not found"
+    exit 1
 fi
 
-ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH
-cd ${WEBROOT}
+echo "Git remote URL: $GIT_REMOTE_URL"
+echo "Branch: $GIT_BRANCH"
+echo ""
 
-# Инициализируем git если ещё не инициализирован
-if [ ! -d ".git" ]; then
-    echo "Initializing Git repository..."
-    git init
+# Клонируем репозиторий на сервере
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  set -e; \
+  if [ -d '${WEBROOT}/.git' ]; then \
+    echo '⚠️  Repository already exists on server at ${WEBROOT}'; \
+    echo 'Using existing repository...'; \
+  else \
+    echo 'Cloning repository...'; \
+    rm -rf ${WEBROOT}/* ${WEBROOT}/.* 2>/dev/null || true; \
+    git clone --branch ${GIT_BRANCH} --single-branch '${GIT_REMOTE_URL}' '${WEBROOT}' || exit 1; \
+    echo '✓ Repository cloned successfully'; \
+  fi"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ Git clone failed${NC}"
+    send_notification "❌ Initial deployment failed: Git clone error"
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Git repository cloned successfully"
+echo ""
+
+# ============================================
+# STEP 6: Upload WordPress Core Files (excluding wp-content)
+# ============================================
+echo -e "${BLUE}═══ STEP 6/8: Uploading WordPress Core Files ═══${NC}"
+echo ""
+
+echo "Creating archive of WordPress core (excluding wp-content)..."
+
+# Создаём временный архив
+CORE_ARCHIVE=$(mktemp /tmp/wp_core_XXXXXX.tar.gz)
+EXCLUDE_FILE="${LOCAL_PROJECT_ROOT}/.deployignore"
+
+# Архивируем WordPress исключая wp-content и .deployignore паттерны
+if [ -f "${EXCLUDE_FILE}" ]; then
+    echo "Using .deployignore file"
+    tar --exclude='wordpress/wp-content' --exclude-from="${EXCLUDE_FILE}" \
+        -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress 2>/dev/null || {
+        # Если tar не поддерживает --exclude-from, используем базовый exclude
+        tar --exclude='wordpress/wp-content' \
+            -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress
+    }
+else
+    tar --exclude='wordpress/wp-content' \
+        -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress
+fi
+
+CORE_SIZE=$(du -h "${CORE_ARCHIVE}" | cut -f1)
+echo "Archive created: ${CORE_SIZE}"
+echo ""
+
+# Загружаем архив на сервер
+echo "Uploading core archive to server..."
+CORE_BASENAME=$(basename "${CORE_ARCHIVE}")
+scp -q "${CORE_ARCHIVE}" "${SSH_USER}@${SSH_HOST}:/tmp/" || {
+    echo -e "${RED}✗ Upload failed${NC}"
+    rm -f "${CORE_ARCHIVE}"
+    send_notification "❌ Initial deployment failed: Core upload error"
+    exit 1
+}
+
+# Распаковываем на сервере
+echo "Extracting core files on server..."
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  set -e; \
+  tar -xzf /tmp/${CORE_BASENAME} -C '${WEBROOT}' --strip-components=1 --keep-newer-files 2>/dev/null || \
+  tar -xzf /tmp/${CORE_BASENAME} -C '${WEBROOT}' --strip-components=1; \
+  rm -f /tmp/${CORE_BASENAME}; \
+"
+
+# Удаляем локальный архив
+rm -f "${CORE_ARCHIVE}"
+
+echo -e "${GREEN}✓${NC} WordPress core files uploaded successfully"
+echo ""
+
+# ============================================
+# STEP 6.5: Upload wp-content/uploads
+# ============================================
+echo -e "${BLUE}═══ STEP 6.5/9: Uploading wp-content/uploads ═══${NC}"
+echo ""
+
+UPLOADS_DIR_LOCAL="${LOCAL_PROJECT_ROOT}/wordpress/wp-content/uploads"
+
+if [ -d "${UPLOADS_DIR_LOCAL}" ]; then
+    # Проверяем размер uploads
+    UPLOADS_SIZE_MB=$(du -sm "${UPLOADS_DIR_LOCAL}" | cut -f1)
+    echo "Uploads directory size: ${UPLOADS_SIZE_MB} MB"
     
-    if [ "$GIT_SETUP" == "auto" ]; then
-        echo "Adding remote origin..."
-        git remote add origin "${GIT_REMOTE_URL}"
+    # Если uploads больше 500MB, предупреждаем
+    if [ ${UPLOADS_SIZE_MB} -gt 500 ]; then
+        echo -e "${YELLOW}⚠️  WARNING: Uploads directory is large (${UPLOADS_SIZE_MB} MB)${NC}"
+        echo "Upload may take a long time or fail due to connection timeout."
+        echo ""
         
-        echo "Fetching from remote..."
-        git fetch origin
+        if [ -t 0 ]; then
+            read -p "Do you want to upload uploads now? (yes/no/skip): " -r UPLOAD_CONFIRM
+        else
+            read -r UPLOAD_CONFIRM < /dev/tty
+            echo "Upload uploads? (yes/no/skip): $UPLOAD_CONFIRM"
+        fi
         
-        echo "Setting up branch..."
-        git checkout -b ${GIT_BRANCH}
-        git branch --set-upstream-to=origin/${GIT_BRANCH} ${GIT_BRANCH}
+        if [[ ! $UPLOAD_CONFIRM =~ ^[Yy][Ee][Ss]$ ]]; then
+            echo -e "${YELLOW}ℹ️  Skipping uploads. You can upload them manually later using rsync:${NC}"
+            echo "  rsync -avz --progress ${UPLOADS_DIR_LOCAL}/ ${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
+            echo ""
+            # Пропускаем uploads
+            echo -e "${GREEN}✓${NC} Uploads skipped (will need manual upload)"
+            echo ""
+            # Продолжаем без ошибки
+            SKIP_UPLOADS=true
+        fi
+    fi
+    
+    if [ "${SKIP_UPLOADS:-false}" != "true" ]; then
+        echo "Creating uploads archive..."
         
-        echo "✓ Git repository configured"
-    else
-        echo "⚠️  Git initialized but remote not configured"
-        echo "Please run manually on server:"
-        echo "  cd ${WEBROOT}"
-        echo "  git remote add origin <your-repo-url>"
-        echo "  git fetch origin"
-        echo "  git checkout -b ${GIT_BRANCH}"
-        echo "  git branch --set-upstream-to=origin/${GIT_BRANCH}"
+        UPLOADS_ARCHIVE=$(mktemp /tmp/wp_uploads_XXXXXX.tar.gz)
+        tar -C "${LOCAL_PROJECT_ROOT}/wordpress/wp-content" -czf "${UPLOADS_ARCHIVE}" uploads
+        
+        UPLOADS_SIZE=$(du -h "${UPLOADS_ARCHIVE}" | cut -f1)
+        echo "Uploads archive created: ${UPLOADS_SIZE}"
+        echo ""
+        
+        echo "Uploading uploads archive to server (this may take a while)..."
+        UPLOADS_BASENAME=$(basename "${UPLOADS_ARCHIVE}")
+        
+        # Пробуем загрузить с таймаутом и повторными попытками
+        UPLOAD_SUCCESS=false
+        for attempt in 1 2 3; do
+            echo "Upload attempt ${attempt}/3..."
+            if scp -o ConnectTimeout=30 -o ServerAliveInterval=60 "${UPLOADS_ARCHIVE}" "${SSH_USER}@${SSH_HOST}:/tmp/"; then
+                UPLOAD_SUCCESS=true
+                break
+            else
+                echo "Attempt ${attempt} failed"
+                sleep 5
+            fi
+        done
+        
+        if [ "${UPLOAD_SUCCESS}" != "true" ]; then
+            echo -e "${RED}✗ Uploads upload failed after 3 attempts${NC}"
+            echo -e "${YELLOW}You can upload uploads manually later using rsync:${NC}"
+            echo "  rsync -avz --progress ${UPLOADS_DIR_LOCAL}/ ${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
+            rm -f "${UPLOADS_ARCHIVE}"
+            # Не выходим с ошибкой, просто предупреждаем
+            echo -e "${YELLOW}⚠️  Continuing without uploads${NC}"
+            echo ""
+        else
+            echo "Extracting uploads on server..."
+            ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+              set -e; \
+              mkdir -p '${WEBROOT}/wp-content'; \
+              tar -xzf /tmp/${UPLOADS_BASENAME} -C '${WEBROOT}/wp-content'; \
+              rm -f /tmp/${UPLOADS_BASENAME}; \
+            "
+            
+            # Удаляем локальный архив
+            rm -f "${UPLOADS_ARCHIVE}"
+            
+            echo -e "${GREEN}✓${NC} Uploads uploaded successfully"
+        fi
     fi
 else
-    echo "Git repository already exists"
+    echo -e "${YELLOW}ℹ️  No local uploads directory found - skipping${NC}"
 fi
-ENDSSH
 
-echo -e "${GREEN}✓${NC} Git repository initialized"
 echo ""
 
 # ============================================
 # STEP 7: Set Permissions
 # ============================================
-echo -e "${BLUE}═══ STEP 7/8: Setting Permissions ═══${NC}"
+echo -e "${BLUE}═══ STEP 7/9: Setting Permissions ═══${NC}"
 echo ""
 
 ssh "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
@@ -354,9 +424,33 @@ echo -e "${GREEN}✓${NC} Permissions set successfully"
 echo ""
 
 # ============================================
-# STEP 8: Verification
+# STEP 8: Create Deployment Marker
 # ============================================
-echo -e "${BLUE}═══ STEP 8/8: Verifying Installation ═══${NC}"
+echo -e "${BLUE}═══ STEP 8/9: Creating Deployment Marker ═══${NC}"
+echo ""
+
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  set -e; \
+  mkdir -p '${WEBROOT}/.deployment-history'; \
+  cat > '${WEBROOT}/.deployment-history/last-deployment.json' << 'DEPLOYEOF'
+{
+    \"type\": \"initial\",
+    \"timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+    \"date_human\": \"$(date)\",
+    \"commit\": \"$(cd ${WEBROOT} 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo 'unknown')\",
+    \"branch\": \"${GIT_BRANCH}\"
+}
+DEPLOYEOF
+  echo '✓ Deployment marker created'; \
+"
+
+echo -e "${GREEN}✓${NC} Deployment marker created"
+echo ""
+
+# ============================================
+# STEP 9: Verification
+# ============================================
+echo -e "${BLUE}═══ STEP 9/9: Verifying Installation ═══${NC}"
 echo ""
 
 VERIFICATION=$(ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH
@@ -413,7 +507,7 @@ echo -e "${MAGENTA}║      INITIAL DEPLOYMENT SUCCESSFUL! 🎉         ║${NC}
 echo -e "${MAGENTA}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${GREEN}✓${NC} WordPress fully deployed to ${ENVIRONMENT^^}"
+echo -e "${GREEN}✓${NC} WordPress fully deployed to ${ENV_UPPER}"
 echo -e "  Location: ${WEBROOT}"
 echo -e "  Site URL: ${SITE_URL}"
 echo ""
@@ -425,6 +519,6 @@ echo "  3. Test the site: ${SITE_URL}"
 echo "  4. Use regular deploy scripts for future updates"
 echo ""
 
-send_notification "✅ Initial deployment to ${ENVIRONMENT^^} completed successfully!"
+send_notification "✅ Initial deployment to ${ENV_UPPER} completed successfully!"
 
 exit 0
