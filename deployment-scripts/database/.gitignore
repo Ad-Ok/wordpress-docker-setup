@@ -1,0 +1,13 @@
+# Игнорировать snapshots (большие файлы, только локально)
+snapshots/
+*.sql.gz
+*.sql
+
+# Игнорировать лог примененных миграций (генерируется автоматически)
+migrations/.applied.json
+migrations/.metadata.json
+
+# Временные файлы
+*.tmp
+*.temp
+.DS_Store
