@@ -8,6 +8,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 source "${SCRIPT_DIR}/utils/notifications.sh"
+source "${SCRIPT_DIR}/utils/deployment-helpers.sh"
 
 # Цвета
 RED='\033[0;31m'
@@ -20,6 +21,40 @@ echo -e "${BLUE}╔════════════════════�
 echo -e "${BLUE}║      DEV DEPLOYMENT - dev.your-domain.com          ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
 echo ""
+
+# ============================================
+# Проверка: Первый ли это деплой?
+# ============================================
+echo -e "${BLUE}Checking deployment type...${NC}"
+
+if is_first_deployment "$DEV_SSH_USER" "$DEV_SSH_HOST" "$DEV_WEBROOT"; then
+    echo -e "${YELLOW}⚠️  First deployment detected!${NC}"
+    echo ""
+    echo "This appears to be the first deployment to DEV server."
+    echo "You should use the initial-deploy.sh script instead."
+    echo ""
+    echo -e "${BLUE}Run:${NC}"
+    echo "  ./deployment-scripts/initial-deploy.sh dev"
+    echo ""
+    
+    if [ -t 0 ]; then
+        read -p "Continue with regular deploy anyway? (yes/no): " -r FORCE_REGULAR
+    else
+        read -r FORCE_REGULAR < /dev/tty
+        echo "Continue? (yes/no): $FORCE_REGULAR"
+    fi
+    
+    if [[ ! $FORCE_REGULAR =~ ^[Yy][Ee][Ss]$ ]]; then
+        echo -e "${YELLOW}Deployment cancelled. Use initial-deploy.sh for first deployment.${NC}"
+        exit 0
+    fi
+    
+    echo -e "${YELLOW}Proceeding with regular deployment as requested...${NC}"
+    echo ""
+else
+    echo -e "${GREEN}✓${NC} Regular deployment (WordPress already installed)"
+    echo ""
+fi
 
 # ============================================
 # STEP 1: Git Status Check
