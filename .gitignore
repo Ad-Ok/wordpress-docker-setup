@@ -40,4 +40,4 @@ wp-content/cache/
 # mysql_data/
 
 # WordPress core files (temporary - will be restructured)
-wordpress/
+# wordpress/
