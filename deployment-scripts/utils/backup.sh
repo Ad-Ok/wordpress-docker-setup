@@ -36,8 +36,9 @@ else
 fi
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+ENV_UPPER=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
 
-echo -e "${BLUE}Creating backup for ${ENVIRONMENT^^}...${NC}"
+echo -e "${BLUE}Creating backup for ${ENV_UPPER}...${NC}"
 echo ""
 
 # ============================================
@@ -92,7 +93,8 @@ BACKUP_FILE="${BACKUP_DIR}/files-${TIMESTAMP}.tar.gz"
 echo "Creating theme backup..."
 tar -czf \${BACKUP_FILE} \
     -C ${WEBROOT} \
-    wp-content/themes/your-theme \
+    wp-content/themes/ \
+    wp-content/plugins/ \
     --exclude='*.log' \
     --exclude='node_modules'
 

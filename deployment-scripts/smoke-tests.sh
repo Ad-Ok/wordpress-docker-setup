@@ -26,8 +26,10 @@ else
     SITE_URL="$DEV_SITE_URL"
 fi
 
+ENV_UPPER=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+
 echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║         Smoke Tests for ${ENVIRONMENT^^}                    ║${NC}"
+echo -e "${BLUE}║         Smoke Tests for ${ENV_UPPER}                    ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Testing: ${SITE_URL}"

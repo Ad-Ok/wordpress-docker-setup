@@ -54,18 +54,27 @@ if [ "$REQUIRE_CONFIRMATION" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
     echo -e "${BLUE}═══ STEP 2/10: Confirmation ═══${NC}"
     echo ""
     
-    # Определяем корень git репозитория
-    GIT_ROOT="$(cd "${SCRIPT_DIR}/.." && git rev-parse --show-toplevel)"
+    # Работаем с WordPress сабмодулем
+    WP_GIT_ROOT="${SCRIPT_DIR}/../wordpress"
     
-    CURRENT_COMMIT=$(cd "${GIT_ROOT}" && git rev-parse --short HEAD)
-    COMMIT_MESSAGE=$(cd "${GIT_ROOT}" && git log -1 --pretty=%B)
+    CURRENT_COMMIT=$(cd "${WP_GIT_ROOT}" && git rev-parse --short HEAD)
+    COMMIT_MESSAGE=$(cd "${WP_GIT_ROOT}" && git log -1 --pretty=%B)
+    CURRENT_BRANCH=$(cd "${WP_GIT_ROOT}" && git rev-parse --abbrev-ref HEAD)
     
+    echo -e "Branch: ${GREEN}${CURRENT_BRANCH}${NC}"
     echo -e "Commit: ${GREEN}${CURRENT_COMMIT}${NC}"
     echo -e "Message: ${COMMIT_MESSAGE}"
     echo ""
     echo -e "${YELLOW}⚠️  You are about to deploy to PRODUCTION${NC}"
     echo ""
-    read -p "Continue? (yes/no): " -r CONFIRM
+    
+    # Читаем из /dev/tty для корректной работы с pipes
+    if [ -t 0 ]; then
+        read -p "Continue? (yes/no): " -r CONFIRM
+    else
+        read -r CONFIRM < /dev/tty
+        echo "Continue? (yes/no): $CONFIRM"
+    fi
     
     if [[ ! $CONFIRM =~ ^[Yy][Ee][Ss]$ ]]; then
         echo -e "${RED}Deployment cancelled by user${NC}"
@@ -143,8 +152,22 @@ if [ "$DRY_RUN_MODE" != "true" ]; then
     ssh "${PROD_SSH_USER}@${PROD_SSH_HOST}" << ENDSSH
 cd ${PROD_WEBROOT}
 
-echo "Current branch: \$(git rev-parse --abbrev-ref HEAD)"
-echo "Current commit: \$(git rev-parse --short HEAD)"
+# Проверка на первый деплой (если есть только дефолтный index.php хостинга)
+if [ -f "index.php" ] && [ ! -d ".git" ]; then
+    echo "⚠️  Detected default hosting files. Cleaning for first deployment..."
+    
+    # Сохраняем .git если он уже есть
+    if [ -d ".git" ]; then
+        echo "Git already initialized, keeping .git directory"
+    fi
+    
+    # Удаляем дефолтные файлы хостинга
+    rm -f index.php
+    echo "✓ Default hosting files removed"
+fi
+
+echo "Current branch: \$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'none')"
+echo "Current commit: \$(git rev-parse --short HEAD 2>/dev/null || echo 'none')"
 echo ""
 
 echo "Fetching from origin..."

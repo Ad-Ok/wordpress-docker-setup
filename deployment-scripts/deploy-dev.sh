@@ -27,9 +27,9 @@ echo ""
 echo -e "${BLUE}═══ STEP 1/5: Checking Git Status ═══${NC}"
 echo ""
 
-# Определяем корень git репозитория (www - это подпапка)
-GIT_ROOT="$(cd "${SCRIPT_DIR}/.." && git rev-parse --show-toplevel)"
-cd "${GIT_ROOT}"
+# Работаем с WordPress сабмодулем, а не с корневым репозиторием
+WP_GIT_ROOT="${SCRIPT_DIR}/../wordpress"
+cd "${WP_GIT_ROOT}"
 
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
@@ -57,6 +57,12 @@ if [ -n "$REMOTE_COMMIT" ] && [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
     fi
 fi
 
+LOCAL_COMMIT=$(git rev-parse --short HEAD)
+COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+
+echo -e "  Branch: ${GREEN}${CURRENT_BRANCH}${NC}"
+echo -e "  Commit: ${GREEN}${LOCAL_COMMIT}${NC}"
+echo -e "  Message: ${COMMIT_MESSAGE}"
 echo -e "${GREEN}✓${NC} Git status OK"
 echo ""
 
@@ -84,8 +90,17 @@ echo ""
 ssh "${DEV_SSH_USER}@${DEV_SSH_HOST}" << ENDSSH
 cd ${DEV_WEBROOT}
 
-echo "Current branch: \$(git rev-parse --abbrev-ref HEAD)"
-echo "Current commit: \$(git rev-parse --short HEAD)"
+# Проверка на первый деплой (если есть только дефолтный index.php хостинга)
+if [ -f "index.php" ] && [ ! -d ".git" ]; then
+    echo "⚠️  Detected default hosting files. Cleaning for first deployment..."
+    
+    # Удаляем дефолтные файлы хостинга
+    rm -f index.php
+    echo "✓ Default hosting files removed"
+fi
+
+echo "Current branch: \$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'none')"
+echo "Current commit: \$(git rev-parse --short HEAD 2>/dev/null || echo 'none')"
 echo ""
 
 echo "Pulling ${DEV_GIT_BRANCH}..."
@@ -163,10 +178,11 @@ echo ""
 CURRENT_COMMIT=$(git rev-parse --short HEAD)
 
 echo -e "${GREEN}✓${NC} DEV deployment completed"
-echo -e "  Commit: ${CURRENT_COMMIT}"
+echo -e "  Branch: ${CURRENT_BRANCH}"
+echo -e "  Commit: ${LOCAL_COMMIT}"
 echo -e "  Site: ${DEV_SITE_URL}"
 echo ""
 
-send_notification "✅ DEV deployed: ${CURRENT_COMMIT}"
+send_notification "✅ DEV deployed: ${LOCAL_COMMIT} - ${COMMIT_MESSAGE}"
 
 exit 0

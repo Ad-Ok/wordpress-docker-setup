@@ -28,7 +28,9 @@ echo ""
 # ============================================
 echo -e "${BLUE}[1/10]${NC} Checking Git status..."
 
-cd "${LOCAL_PROJECT_ROOT}"
+# Работаем с WordPress сабмодулем, а не с корневым репозиторием
+WP_GIT_ROOT="${LOCAL_PROJECT_ROOT}/wordpress"
+cd "${WP_GIT_ROOT}"
 
 # Проверка, что мы на нужной ветке
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -72,8 +74,7 @@ cd "${LOCAL_THEME_PATH}"
 
 # Проверка, что CSS файлы существуют и свежие
 CSS_FILES=(
-    "assets/css/main.css"
-    "assets/css/admin.css"
+    "assets/css/style.css"
 )
 
 for css_file in "${CSS_FILES[@]}"; do
@@ -82,25 +83,26 @@ for css_file in "${CSS_FILES[@]}"; do
         ((ERRORS++))
     else
         # Проверка, что CSS файл собран недавно (не старше исходников)
-        SCSS_FILE="${css_file/.css/.scss}"
-        SCSS_FILE="${SCSS_FILE/css\//scss\/}"
-        
-        if [ -f "$SCSS_FILE" ]; then
-            if [ "$SCSS_FILE" -nt "$css_file" ]; then
+        # Проверяем самый новый SCSS файл
+        if [ -d "src/scss" ]; then
+            NEWEST_SCSS=$(find src/scss -name "*.scss" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+            
+            if [ -n "$NEWEST_SCSS" ] && [ "$NEWEST_SCSS" -nt "$css_file" ]; then
                 echo -e "${YELLOW}⚠️  WARNING: ${css_file} is older than source SCSS${NC}"
                 echo "   Run: npm run build"
                 ((WARNINGS++))
             else
                 echo -e "${GREEN}✓${NC} ${css_file} is up to date"
             fi
+        else
+            echo -e "${GREEN}✓${NC} ${css_file} exists"
         fi
     fi
 done
 
 # Проверка JS файлов
 JS_FILES=(
-    "assets/js/main.min.js"
-    "assets/js/admin.min.js"
+    "assets/js/main.js"
 )
 
 for js_file in "${JS_FILES[@]}"; do
@@ -200,26 +202,29 @@ echo ""
 # ============================================
 echo -e "${BLUE}[7/10]${NC} Checking .gitignore..."
 
-cd "${LOCAL_PROJECT_ROOT}"
+cd "${LOCAL_THEME_PATH}"
 
 GITIGNORE_FILE=".gitignore"
 if [ -f "$GITIGNORE_FILE" ]; then
-    # Проверка, что собранные ассеты НЕ в .gitignore
-    if grep -q "assets/css/\*.css" "$GITIGNORE_FILE" 2>/dev/null; then
+    # Проверка, что собранные ассеты НЕ в .gitignore (для деплоя нужны в репе)
+    if grep -qE "^assets/css/style\.css$|^assets/css/\*\.css$" "$GITIGNORE_FILE" 2>/dev/null; then
         echo -e "${RED}✗ ERROR: Built CSS files are ignored in .gitignore${NC}"
-        echo "   Remove 'assets/css/*.css' from .gitignore"
+        echo "   Remove 'assets/css/style.css' from .gitignore"
         ((ERRORS++))
     else
         echo -e "${GREEN}✓${NC} Built CSS files are tracked"
     fi
     
-    if grep -q "assets/js/\*.min.js" "$GITIGNORE_FILE" 2>/dev/null; then
+    if grep -qE "^assets/js/main\.js$|^assets/js/\*\.js$" "$GITIGNORE_FILE" 2>/dev/null; then
         echo -e "${RED}✗ ERROR: Built JS files are ignored in .gitignore${NC}"
-        echo "   Remove 'assets/js/*.min.js' from .gitignore"
+        echo "   Remove 'assets/js/main.js' from .gitignore"
         ((ERRORS++))
     else
         echo -e "${GREEN}✓${NC} Built JS files are tracked"
     fi
+else
+    echo -e "${YELLOW}⚠️  WARNING: .gitignore not found${NC}"
+    ((WARNINGS++))
 fi
 
 echo ""

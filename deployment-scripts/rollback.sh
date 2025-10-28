@@ -32,8 +32,10 @@ else
     WP_PATH="$DEV_WP_PATH"
 fi
 
+ENV_UPPER=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+
 echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║              ROLLBACK - ${ENVIRONMENT^^}                    ║${NC}"
+echo -e "${BLUE}║              ROLLBACK - ${ENV_UPPER}                    ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -152,7 +154,7 @@ ENDSSH
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}✗ Database restore failed${NC}"
-    send_notification "❌ ${ENVIRONMENT^^} rollback failed: Database restore error"
+    send_notification "❌ ${ENV_UPPER} rollback failed: Database restore error"
     exit 1
 fi
 
@@ -186,7 +188,7 @@ ENDSSH
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}✗ Files restore failed${NC}"
-    send_notification "❌ ${ENVIRONMENT^^} rollback failed: Files restore error"
+    send_notification "❌ ${ENV_UPPER} rollback failed: Files restore error"
     exit 1
 fi
 
@@ -234,6 +236,6 @@ echo -e "${GREEN}✓${NC} Rollback completed successfully"
 echo "  Restored to: ${TIMESTAMP}"
 echo ""
 
-send_notification "✅ ${ENVIRONMENT^^} rolled back to ${TIMESTAMP}"
+send_notification "✅ ${ENV_UPPER} rolled back to ${TIMESTAMP}"
 
 exit 0
