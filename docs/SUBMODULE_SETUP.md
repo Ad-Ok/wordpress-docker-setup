@@ -11,7 +11,7 @@ maslovka/
 │   ├── nginx/
 │   ├── php/
 │   ├── mysql/
-│   └── wordpress/                          # 📦 Submodule: maslovkaorg
+│   └── wordpress/                          # 📦 Submodule: wordpress-submodule
 │       ├── .git                           # Ссылка на submodule repo
 │       ├── .gitignore                     # Игнорирует WordPress core
 │       └── wp-content/                    # Контент проекта
@@ -26,12 +26,12 @@ maslovka/
 
 1. **Основной репозиторий (Docker setup)**
    - Репозиторий: `Ad-Ok/wordpress-docker-setup`
-   - Путь: `/Users/adoknov/work/maslovka/www/`
+   - Путь: `/path/to/your/project/www/`
    - Ветка: `dev`
 
 2. **Submodule (WordPress content)**
-   - Репозиторий: `Sten129/maslovkaorg`
-   - Путь: `/Users/adoknov/work/maslovka/www/wordpress/`
+   - Репозиторий: `Sten129/wordpress-submodule`
+   - Путь: `/path/to/your/project/www/wordpress/`
    - Ветка: `main`
 
 ## 📋 Как работать с submodules
@@ -60,7 +60,7 @@ cd www/wordpress
 git branch
 
 # Внести изменения
-cd wp-content/themes/maslovka
+cd wp-content/themes/your-theme
 # ... редактируете файлы ...
 
 # Закоммитить изменения в submodule
@@ -69,7 +69,7 @@ git commit -m "Update theme styles"
 git push origin main
 
 # Вернуться в основной репозиторий и обновить ссылку на submodule
-cd /Users/adoknov/work/maslovka/www
+cd /path/to/your/project/www
 git add wordpress
 git commit -m "Update wordpress submodule to latest version"
 git push origin dev
@@ -91,7 +91,7 @@ git push
 
 ```bash
 # Из корня основного репозитория
-cd /Users/adoknov/work/maslovka/www
+cd /path/to/your/project/www
 git submodule status
 
 # Показывает: commit_hash wordpress (branch_name)
@@ -103,24 +103,24 @@ git submodule status
 
 ```bash
 # 1. Перейти в wordpress submodule
-cd /Users/adoknov/work/maslovka/www/wordpress
+cd /path/to/your/project/www/wordpress
 
 # 2. Убедиться что на актуальной ветке
 git checkout main
 git pull origin main
 
 # 3. Работать с темой
-cd wp-content/themes/maslovka
+cd wp-content/themes/your-theme
 vim style.css
 
 # 4. Закоммитить в submodule
-cd /Users/adoknov/work/maslovka/www/wordpress
-git add wp-content/themes/maslovka
+cd /path/to/your/project/www/wordpress
+git add wp-content/themes/your-theme
 git commit -m "feat: update header styles"
 git push origin main
 
 # 5. Обновить ссылку в основном репозитории
-cd /Users/adoknov/work/maslovka/www
+cd /path/to/your/project/www
 git add wordpress
 git commit -m "chore: update wordpress submodule"
 git push origin dev
@@ -130,7 +130,7 @@ git push origin dev
 
 ```bash
 # 1. Работать в основном репозитории
-cd /Users/adoknov/work/maslovka/www
+cd /path/to/your/project/www
 vim docker-compose.yml
 
 # 2. Закоммитить
@@ -143,7 +143,7 @@ git push origin dev
 
 ```bash
 # 1. Получить последние изменения основного репозитория
-cd /Users/adoknov/work/maslovka/www
+cd /path/to/your/project/www
 git pull origin dev
 
 # 2. Обновить submodules
@@ -184,7 +184,7 @@ git pull origin main
 - `/index.php`
 - И другие core файлы
 
-Это значит, что в репозиторий `maslovkaorg` попадает **только** `wp-content/`.
+Это значит, что в репозиторий `wordpress-submodule` попадает **только** `wp-content/`.
 
 ## 🔧 Полезные команды
 

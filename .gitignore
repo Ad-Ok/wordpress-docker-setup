@@ -3,6 +3,33 @@
 .env.local
 .env.production
 
+# ============================================
+# Deployment Scripts
+# ============================================
+
+# Конфигурация с credentials (ВАЖНО!)
+deployment-scripts/config.sh
+
+# Локальные бэкапы
+backups/
+*.sql
+*.sql.gz
+
+# ============================================
+# Build artifacts
+# ============================================
+
+# Node modules
+node_modules/
+
+# ВАЖНО: Собранные ассеты НЕ игнорируем (они в git для деплоя)
+# wordpress/wp-content/themes/maslovka/assets/css/*.css
+# wordpress/wp-content/themes/maslovka/assets/js/*.min.js
+
+# ============================================
+# WordPress
+# ============================================
+
 # WordPress archives
 *.tar.gz
 *.zip
@@ -13,9 +40,6 @@ logs/
 
 # MySQL data (if not using named volume)
 mysql/data/
-
-# Node modules (if any)
-node_modules/
 
 # IDE files
 .vscode/
@@ -33,7 +57,7 @@ Thumbs.db
 
 # WordPress specific
 wp-config.php.bak
-wp-content/uploads/ (if you want to exclude uploads)
+wp-content/uploads/
 wp-content/cache/
 
 # Docker volumes (optional - comment out if you want to keep data)
