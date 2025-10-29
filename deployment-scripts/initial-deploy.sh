@@ -309,145 +309,6 @@ echo -e "${GREEN}✓${NC} Git repository cloned successfully"
 echo ""
 
 # ============================================
-# STEP 5.5: Database Upload from Local
-# ============================================
-echo -e "${BLUE}═══ STEP 5.5/10: Uploading Database from Local ═══${NC}"
-echo ""
-
-echo "This will upload your local database to the server."
-echo "Assumption: Local database is up-to-date and matches the current Git branch."
-echo ""
-
-# Проверяем Docker
-if ! docker ps &> /dev/null; then
-    echo -e "${RED}✗ Docker is not running${NC}"
-    echo "Please start Docker and ensure MySQL container is running."
-    exit 1
-fi
-
-if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
-    echo -e "${YELLOW}⚠️  MySQL container is not running. Starting...${NC}"
-    docker start "${LOCAL_DB_CONTAINER}" || {
-        echo -e "${RED}✗ Failed to start MySQL container${NC}"
-        exit 1
-    }
-    sleep 3
-fi
-
-echo "Checking local database connection..."
-if ! docker exec "${LOCAL_DB_CONTAINER}" mysql -u"${LOCAL_DB_USER}" -p"${LOCAL_DB_PASS}" -e "SELECT 1" &> /dev/null; then
-    echo -e "${RED}✗ Cannot connect to local database${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓${NC} Local database connection OK"
-echo ""
-
-# Создаём backup на удаленном сервере (если БД уже существует)
-echo "[1/4] Creating remote database backup (if exists)..."
-ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
-  set -e; \
-  WP='/usr/local/bin/php ~/wp-cli.phar'; \
-  if [ -f ~/wp-cli.phar ]; then \
-    cd '${WEBROOT}' 2>/dev/null || cd /; \
-    if \$WP db check 2>/dev/null; then \
-      mkdir -p '${BACKUP_DIR}'; \
-      echo '→ Creating backup...'; \
-      \$WP db export '${BACKUP_DIR}/backup-before-initial-deploy-\$(date +%Y%m%d_%H%M%S).sql.gz' 2>/dev/null || true; \
-      echo '✓ Backup created'; \
-    else \
-      echo 'ℹ️  No existing database to backup'; \
-    fi; \
-  else \
-    echo 'ℹ️  WP-CLI not available, skipping backup'; \
-  fi; \
-"
-
-echo ""
-
-# Экспортируем локальную БД
-echo "[2/4] Exporting local database..."
-LOCAL_DB_DUMP=$(mktemp /tmp/db_initial_deploy_XXXXXX.sql.gz)
-
-docker exec "${LOCAL_DB_CONTAINER}" \
-    mysqldump \
-    -u"${LOCAL_DB_USER}" \
-    -p"${LOCAL_DB_PASS}" \
-    "${LOCAL_DB_NAME}" \
-    2>/dev/null | gzip > "${LOCAL_DB_DUMP}"
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ Failed to export local database${NC}"
-    rm -f "${LOCAL_DB_DUMP}"
-    send_notification "❌ Initial deployment failed: Database export error"
-    exit 1
-fi
-
-DB_SIZE=$(du -h "${LOCAL_DB_DUMP}" | cut -f1)
-echo -e "${GREEN}✓${NC} Database exported (${DB_SIZE})"
-echo ""
-
-# Загружаем БД на сервер
-echo "[3/4] Uploading database to server..."
-DB_DUMP_BASENAME=$(basename "${LOCAL_DB_DUMP}")
-scp -q "${LOCAL_DB_DUMP}" "${SSH_USER}@${SSH_HOST}:/tmp/" || {
-    echo -e "${RED}✗ Database upload failed${NC}"
-    rm -f "${LOCAL_DB_DUMP}"
-    send_notification "❌ Initial deployment failed: Database upload error"
-    exit 1
-}
-
-echo -e "${GREEN}✓${NC} Database uploaded"
-echo ""
-
-# Импортируем БД на сервере и выполняем search-replace
-echo "[4/4] Importing database and replacing URLs..."
-
-# Определяем какие URL нужно заменить
-SOURCE_URL="${LOCAL_SITE_URL}"
-TARGET_URL="${SITE_URL}"
-
-ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
-  set -e; \
-  cd '${WEBROOT}'; \
-  \
-  WP='/usr/local/bin/php ~/wp-cli.phar'; \
-  \
-  echo '→ Importing database...'; \
-  gunzip -c /tmp/${DB_DUMP_BASENAME} | \$WP db import - 2>/dev/null || exit 1; \
-  echo '✓ Database imported'; \
-  \
-  echo '→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}'; \
-  \$WP search-replace '${SOURCE_URL}' '${TARGET_URL}' \
-    --precise \
-    --recurse-objects \
-    --all-tables \
-    --skip-columns=guid \
-    2>/dev/null || exit 1; \
-  echo '✓ URLs replaced'; \
-  \
-  echo '→ Flushing cache...'; \
-  \$WP cache flush 2>/dev/null || true; \
-  \$WP rewrite flush 2>/dev/null || true; \
-  echo '✓ Cache flushed'; \
-  \
-  rm -f /tmp/${DB_DUMP_BASENAME}; \
-"
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ Database import/replace failed${NC}"
-    rm -f "${LOCAL_DB_DUMP}"
-    send_notification "❌ Initial deployment failed: Database import error"
-    exit 1
-fi
-
-# Удаляем локальный дамп
-rm -f "${LOCAL_DB_DUMP}"
-
-echo -e "${GREEN}✓${NC} Database uploaded and configured successfully"
-echo ""
-
-# ============================================
 # STEP 6: Upload WordPress Core Files (excluding wp-content)
 # ============================================
 echo -e "${BLUE}═══ STEP 6/10: Uploading WordPress Core Files ═══${NC}"
@@ -593,6 +454,143 @@ else
     echo -e "${YELLOW}ℹ️  No local uploads directory found - skipping${NC}"
 fi
 
+echo ""
+
+# ============================================
+# STEP 6.7: Database Upload and Import
+# ============================================
+echo -e "${BLUE}═══ STEP 6.7/11: Uploading Database from Local ═══${NC}"
+echo ""
+
+echo "This will upload your local database to the server."
+echo "Assumption: Local database is up-to-date and matches the current Git branch."
+echo ""
+
+# Проверяем Docker
+if ! docker ps &> /dev/null; then
+    echo -e "${RED}✗ Docker is not running${NC}"
+    echo "Please start Docker and ensure MySQL container is running."
+    exit 1
+fi
+
+if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
+    echo -e "${YELLOW}⚠️  MySQL container is not running. Starting...${NC}"
+    docker start "${LOCAL_DB_CONTAINER}" || {
+        echo -e "${RED}✗ Failed to start MySQL container${NC}"
+        exit 1
+    }
+    sleep 3
+fi
+
+echo "Checking local database connection..."
+if ! docker exec "${LOCAL_DB_CONTAINER}" mysql -u"${LOCAL_DB_USER}" -p"${LOCAL_DB_PASS}" -e "SELECT 1" &> /dev/null; then
+    echo -e "${RED}✗ Cannot connect to local database${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Local database connection OK"
+echo ""
+
+# Создаём backup на удаленном сервере (если БД уже существует)
+echo "[1/4] Creating remote database backup (if exists)..."
+ssh "${SSH_USER}@${SSH_HOST}" bash -c "\
+  WP='/usr/local/bin/php ~/wp-cli.phar'; \
+  if [ -f ~/wp-cli.phar ]; then \
+    cd '${WEBROOT}' 2>/dev/null || cd /; \
+    if \$WP db check 2>/dev/null; then \
+      mkdir -p '${BACKUP_DIR}'; \
+      echo '→ Creating backup...'; \
+      \$WP db export '${BACKUP_DIR}/backup-before-initial-deploy-\$(date +%Y%m%d_%H%M%S).sql.gz' 2>/dev/null || true; \
+      echo '✓ Backup created'; \
+    else \
+      echo 'ℹ️  No existing database to backup'; \
+    fi; \
+  else \
+    echo 'ℹ️  WP-CLI not available, skipping backup'; \
+  fi; \
+" 2>&1 | grep -v "^BASH" | grep -v "^DIRSTACK" | grep -v "^GROUPS" | grep -v "=" || true
+
+echo ""
+
+# Экспортируем локальную БД
+echo "[2/4] Exporting local database..."
+LOCAL_DB_DUMP="/tmp/db_initial_deploy_$(date +%Y%m%d_%H%M%S)_$$.sql.gz"
+
+docker exec "${LOCAL_DB_CONTAINER}" \
+    mysqldump \
+    -u"${LOCAL_DB_USER}" \
+    -p"${LOCAL_DB_PASS}" \
+    "${LOCAL_DB_NAME}" \
+    2>/dev/null | gzip > "${LOCAL_DB_DUMP}"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ Failed to export local database${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database export error"
+    exit 1
+fi
+
+DB_SIZE=$(du -h "${LOCAL_DB_DUMP}" | cut -f1)
+echo -e "${GREEN}✓${NC} Database exported (${DB_SIZE})"
+echo ""
+
+# Загружаем БД на сервер
+echo "[3/4] Uploading database to server..."
+DB_DUMP_BASENAME=$(basename "${LOCAL_DB_DUMP}")
+scp -q "${LOCAL_DB_DUMP}" "${SSH_USER}@${SSH_HOST}:/tmp/" || {
+    echo -e "${RED}✗ Database upload failed${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database upload error"
+    exit 1
+}
+
+echo -e "${GREEN}✓${NC} Database uploaded"
+echo ""
+
+# Импортируем БД на сервере и выполняем search-replace
+echo "[4/4] Importing database and replacing URLs..."
+
+# Определяем какие URL нужно заменить
+SOURCE_URL="${LOCAL_SITE_URL}"
+TARGET_URL="${SITE_URL}"
+
+ssh "${SSH_USER}@${SSH_HOST}" bash -c "\
+  cd '${WEBROOT}'; \
+  \
+  WP='/usr/local/bin/php ~/wp-cli.phar'; \
+  \
+  echo '→ Importing database...'; \
+  gunzip -c /tmp/${DB_DUMP_BASENAME} | \$WP db import - 2>/dev/null || exit 1; \
+  echo '✓ Database imported'; \
+  \
+  echo '→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}'; \
+  \$WP search-replace '${SOURCE_URL}' '${TARGET_URL}' \
+    --precise \
+    --recurse-objects \
+    --all-tables \
+    --skip-columns=guid \
+    2>/dev/null || exit 1; \
+  echo '✓ URLs replaced'; \
+  \
+  echo '→ Flushing cache...'; \
+  \$WP cache flush 2>/dev/null || true; \
+  \$WP rewrite flush 2>/dev/null || true; \
+  echo '✓ Cache flushed'; \
+  \
+  rm -f /tmp/${DB_DUMP_BASENAME}; \
+" 2>&1 | grep -v "^BASH" | grep -v "^DIRSTACK" | grep -v "^GROUPS" | grep -v "=" || true
+
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo -e "${RED}✗ Database import/replace failed${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database import error"
+    exit 1
+fi
+
+# Удаляем локальный дамп
+rm -f "${LOCAL_DB_DUMP}"
+
+echo -e "${GREEN}✓${NC} Database uploaded and configured successfully"
 echo ""
 
 # ============================================
