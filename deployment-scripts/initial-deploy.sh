@@ -46,6 +46,10 @@ if [ "$ENVIRONMENT" == "prod" ]; then
     BACKUP_DIR="$PROD_BACKUP_DIR"
     GIT_BRANCH="$PROD_GIT_BRANCH"
     SITE_URL="$PROD_SITE_URL"
+    DB_NAME="$PROD_DB_NAME"
+    DB_USER="$PROD_DB_USER"
+    DB_PASSWORD="$PROD_DB_PASS"
+    DB_HOST="$PROD_DB_HOST"
 elif [ "$ENVIRONMENT" == "dev" ]; then
     SSH_USER="$DEV_SSH_USER"
     SSH_HOST="$DEV_SSH_HOST"
@@ -53,6 +57,10 @@ elif [ "$ENVIRONMENT" == "dev" ]; then
     BACKUP_DIR="$DEV_BACKUP_DIR"
     GIT_BRANCH="$DEV_GIT_BRANCH"
     SITE_URL="$DEV_SITE_URL"
+    DB_NAME="$DEV_DB_NAME"
+    DB_USER="$DEV_DB_USER"
+    DB_PASSWORD="$DEV_DB_PASS"
+    DB_HOST="$DEV_DB_HOST"
 else
     echo -e "${RED}Invalid environment: $ENVIRONMENT${NC}"
     echo "Usage: $0 [prod|dev]"
@@ -640,38 +648,40 @@ echo "[4/4] Importing database and replacing URLs..."
 SOURCE_URL="${LOCAL_SITE_URL}"
 TARGET_URL="${SITE_URL}"
 
-ssh "${SSH_USER}@${SSH_HOST}" bash -c "\
-  cd '${WEBROOT}'; \
-  \
-  WP='/usr/local/bin/php ~/wp-cli.phar'; \
-  \
-  echo '→ Importing database...'; \
-  gunzip -c /tmp/${DB_DUMP_BASENAME} | \$WP db import - 2>/dev/null || exit 1; \
-  echo '✓ Database imported'; \
-  \
-  echo '→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}'; \
-  \$WP search-replace '${SOURCE_URL}' '${TARGET_URL}' \
-    --precise \
-    --recurse-objects \
-    --all-tables \
-    --skip-columns=guid \
-    2>/dev/null || exit 1; \
-  echo '✓ URLs replaced'; \
-  \
-  echo '→ Flushing cache...'; \
-  \$WP cache flush 2>/dev/null || true; \
-  \$WP rewrite flush 2>/dev/null || true; \
-  echo '✓ Cache flushed'; \
-  \
-  rm -f /tmp/${DB_DUMP_BASENAME}; \
-" 2>&1 | grep -v "^BASH" | grep -v "^DIRSTACK" | grep -v "^GROUPS" | grep -v "=" || true
+# Импортируем базу данных через MySQL
+echo "→ Importing database..."
+SSH_RESULT=$(ssh "${SSH_USER}@${SSH_HOST}" "gunzip -c /tmp/${DB_DUMP_BASENAME} | mysql -u '${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' 2>&1 && echo 'SUCCESS' || echo 'FAILED'")
 
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-    echo -e "${RED}✗ Database import/replace failed${NC}"
+if echo "$SSH_RESULT" | grep -q "SUCCESS"; then
+    echo -e "${GREEN}✓${NC} Database imported"
+else
+    echo -e "${RED}✗ Database import failed${NC}"
+    echo "$SSH_RESULT" | grep -v "Using a password"
     rm -f "${LOCAL_DB_DUMP}"
     send_notification "❌ Initial deployment failed: Database import error"
     exit 1
 fi
+echo ""
+
+# Заменяем URL через SQL
+echo "→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}"
+ssh "${SSH_USER}@${SSH_HOST}" "mysql -u '${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"
+UPDATE wp_options SET option_value = REPLACE(option_value, '${SOURCE_URL}', '${TARGET_URL}');
+UPDATE wp_posts SET post_content = REPLACE(post_content, '${SOURCE_URL}', '${TARGET_URL}');
+UPDATE wp_posts SET post_excerpt = REPLACE(post_excerpt, '${SOURCE_URL}', '${TARGET_URL}');
+UPDATE wp_postmeta SET meta_value = REPLACE(meta_value, '${SOURCE_URL}', '${TARGET_URL}');
+UPDATE wp_comments SET comment_content = REPLACE(comment_content, '${SOURCE_URL}', '${TARGET_URL}');
+UPDATE wp_options SET option_value = '${TARGET_URL}' WHERE option_name IN ('siteurl', 'home');
+\"" 2>&1 | grep -v "Using a password"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓${NC} URLs replaced"
+else
+    echo -e "${YELLOW}⚠${NC} URL replacement completed with warnings"
+fi
+
+# Удаляем временный файл дампа
+ssh "${SSH_USER}@${SSH_HOST}" "rm -f /tmp/${DB_DUMP_BASENAME}"
 
 # Удаляем локальный дамп
 rm -f "${LOCAL_DB_DUMP}"
