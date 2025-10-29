@@ -452,7 +452,7 @@ gunzip -c snapshot.sql.gz | docker exec -i wordpress_mysql \
 
 ### Где хранятся данные
 
-- **Snapshots**: `/Users/adoknov/work/maslovka/backups/snapshots/`
+- **Snapshots**: `/Users/adoknov/work/maslovka/www/backups/snapshots/`
 - **Миграции**: `www/deployment-scripts/database/migrations/`
 - **Логи применения**: `www/deployment-scripts/database/migrations/.applied.json`
 
