@@ -102,7 +102,32 @@ echo ""
 echo -e "${BLUE}═══ STEP 1/8: Checking Local Environment ═══${NC}"
 echo ""
 
-# Проверяем, что wordpress директория существует
+# 1.1 Проверка Docker контейнера с базой данных
+echo "→ Checking Docker MySQL container..."
+if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
+    echo -e "${RED}✗ Docker MySQL container '${LOCAL_DB_CONTAINER}' is not running${NC}"
+    echo ""
+    echo "Please start Docker containers:"
+    echo "  cd ${LOCAL_PROJECT_ROOT} && docker compose up -d"
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} Docker MySQL container is running"
+
+# 1.2 Проверка подключения к локальной базе данных
+echo "→ Checking local database connection..."
+if ! docker exec "${LOCAL_DB_CONTAINER}" mysql -u"${LOCAL_DB_USER}" -p"${LOCAL_DB_PASS}" -e "SELECT 1" &>/dev/null; then
+    echo -e "${RED}✗ Cannot connect to local database${NC}"
+    echo ""
+    echo "Database credentials in config.sh:"
+    echo "  User: ${LOCAL_DB_USER}"
+    echo "  Database: ${LOCAL_DB_NAME}"
+    echo "  Container: ${LOCAL_DB_CONTAINER}"
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} Local database connection OK"
+
+# 1.3 Проверяем, что wordpress директория существует
+echo "→ Checking WordPress directory..."
 if [ ! -d "${LOCAL_PROJECT_ROOT}/wordpress" ]; then
     echo -e "${RED}✗ WordPress directory not found: ${LOCAL_PROJECT_ROOT}/wordpress${NC}"
     exit 1
@@ -139,6 +164,26 @@ if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 "${SSH_USER}@${SSH_HOST}" exit;
 fi
 
 echo -e "${GREEN}✓${NC} SSH connection successful"
+echo ""
+
+# 2.1 Проверка WP-CLI на сервере
+echo "→ Checking WP-CLI on server..."
+WP_CLI_CHECK=$(ssh "${SSH_USER}@${SSH_HOST}" "if [ -f ~/wp-cli.phar ] && /usr/local/bin/php ~/wp-cli.phar --version &>/dev/null; then echo 'OK'; else echo 'MISSING'; fi")
+
+if [ "$WP_CLI_CHECK" != "OK" ]; then
+    echo -e "${RED}✗ WP-CLI is not installed or not working on server${NC}"
+    echo ""
+    echo "Please install WP-CLI on the server:"
+    echo "  ssh ${SSH_USER}@${SSH_HOST}"
+    echo "  curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+    echo "  chmod +x wp-cli.phar"
+    echo "  mv wp-cli.phar ~/wp-cli.phar"
+    echo "  echo 'alias wp=\"/usr/local/bin/php ~/wp-cli.phar\"' >> ~/.bash_profile"
+    echo ""
+    echo "Or see: www/docs/WP-CLI_INSTALL_ON_SPRINTHOST.md"
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} WP-CLI is installed on server"
 echo ""
 
 # ============================================
@@ -302,12 +347,13 @@ echo ""
 echo "[1/4] Creating remote database backup (if exists)..."
 ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
   set -e; \
-  if command -v wp &> /dev/null; then \
+  WP='/usr/local/bin/php ~/wp-cli.phar'; \
+  if [ -f ~/wp-cli.phar ]; then \
     cd '${WEBROOT}' 2>/dev/null || cd /; \
-    if wp db check 2>/dev/null; then \
+    if \$WP db check 2>/dev/null; then \
       mkdir -p '${BACKUP_DIR}'; \
       echo '→ Creating backup...'; \
-      wp db export '${BACKUP_DIR}/backup-before-initial-deploy-\$(date +%Y%m%d_%H%M%S).sql.gz' 2>/dev/null || true; \
+      \$WP db export '${BACKUP_DIR}/backup-before-initial-deploy-\$(date +%Y%m%d_%H%M%S).sql.gz' 2>/dev/null || true; \
       echo '✓ Backup created'; \
     else \
       echo 'ℹ️  No existing database to backup'; \
@@ -364,25 +410,27 @@ TARGET_URL="${SITE_URL}"
 ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
   set -e; \
   cd '${WEBROOT}'; \
-  
+  \
+  WP='/usr/local/bin/php ~/wp-cli.phar'; \
+  \
   echo '→ Importing database...'; \
-  gunzip -c /tmp/${DB_DUMP_BASENAME} | wp db import - 2>/dev/null || exit 1; \
+  gunzip -c /tmp/${DB_DUMP_BASENAME} | \$WP db import - 2>/dev/null || exit 1; \
   echo '✓ Database imported'; \
-  
+  \
   echo '→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}'; \
-  wp search-replace '${SOURCE_URL}' '${TARGET_URL}' \
+  \$WP search-replace '${SOURCE_URL}' '${TARGET_URL}' \
     --precise \
     --recurse-objects \
     --all-tables \
     --skip-columns=guid \
     2>/dev/null || exit 1; \
   echo '✓ URLs replaced'; \
-  
+  \
   echo '→ Flushing cache...'; \
-  wp cache flush 2>/dev/null || true; \
-  wp rewrite flush 2>/dev/null || true; \
+  \$WP cache flush 2>/dev/null || true; \
+  \$WP rewrite flush 2>/dev/null || true; \
   echo '✓ Cache flushed'; \
-  
+  \
   rm -f /tmp/${DB_DUMP_BASENAME}; \
 "
 
@@ -720,8 +768,9 @@ echo -e "${BLUE}═══ STEP 11/11: Verifying Database Connection ═══${N
 echo ""
 
 DB_CHECK=$(ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  WP='/usr/local/bin/php ~/wp-cli.phar'; \
   cd '${WEBROOT}'; \
-  if wp db check 2>/dev/null; then \
+  if \$WP db check 2>/dev/null; then \
     echo 'OK'; \
   else \
     echo 'FAILED'; \
@@ -735,10 +784,11 @@ if [[ "$DB_CHECK" == *"OK"* ]]; then
     echo ""
     echo "Database information:"
     ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+      WP='/usr/local/bin/php ~/wp-cli.phar'; \
       cd '${WEBROOT}'; \
-      echo '  Tables: \$(wp db query \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE();\" --skip-column-names 2>/dev/null)'; \
-      echo '  Site URL: \$(wp option get siteurl 2>/dev/null)'; \
-      echo '  Home URL: \$(wp option get home 2>/dev/null)'; \
+      echo '  Tables: \$(\$WP db query \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE();\" --skip-column-names 2>/dev/null)'; \
+      echo '  Site URL: \$(\$WP option get siteurl 2>/dev/null)'; \
+      echo '  Home URL: \$(\$WP option get home 2>/dev/null)'; \
     "
 else
     echo -e "${YELLOW}⚠️  Warning: Could not verify database connection${NC}"
