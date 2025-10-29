@@ -328,17 +328,36 @@ echo "Creating archive of WordPress core (excluding wp-content)..."
 CORE_ARCHIVE=$(mktemp /tmp/wp_core_XXXXXX.tar.gz)
 EXCLUDE_FILE="${LOCAL_PROJECT_ROOT}/.deployignore"
 
+# Паттерны исключений для macOS и других мусорных файлов
+EXCLUDE_PATTERNS=(
+    --exclude='.DS_Store'
+    --exclude='__MACOSX'
+    --exclude='._*'
+    --exclude='.Spotlight-V100'
+    --exclude='.Trashes'
+    --exclude='.AppleDouble'
+    --exclude='.LSOverride'
+    --exclude='*.swp'
+    --exclude='*.swo'
+    --exclude='*~'
+    --exclude='.git'
+    --exclude='.gitignore'
+    --exclude='.gitattributes'
+    --exclude='Thumbs.db'
+    --exclude='desktop.ini'
+)
+
 # Архивируем WordPress исключая wp-content и .deployignore паттерны
 if [ -f "${EXCLUDE_FILE}" ]; then
     echo "Using .deployignore file"
-    tar --exclude='wordpress/wp-content' --exclude-from="${EXCLUDE_FILE}" \
+    tar --exclude='wordpress/wp-content' --exclude-from="${EXCLUDE_FILE}" "${EXCLUDE_PATTERNS[@]}" \
         -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress 2>/dev/null || {
         # Если tar не поддерживает --exclude-from, используем базовый exclude
-        tar --exclude='wordpress/wp-content' \
+        tar --exclude='wordpress/wp-content' "${EXCLUDE_PATTERNS[@]}" \
             -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress
     }
 else
-    tar --exclude='wordpress/wp-content' \
+    tar --exclude='wordpress/wp-content' "${EXCLUDE_PATTERNS[@]}" \
         -C "${LOCAL_PROJECT_ROOT}" -czf "${CORE_ARCHIVE}" wordpress
 fi
 
@@ -499,7 +518,10 @@ if [ -d "${UPLOADS_DIR_LOCAL}" ]; then
         echo "Creating uploads archive..."
         
         UPLOADS_ARCHIVE=$(mktemp /tmp/wp_uploads_XXXXXX.tar.gz)
-        tar -C "${LOCAL_PROJECT_ROOT}/wordpress/wp-content" -czf "${UPLOADS_ARCHIVE}" uploads
+        
+        # Используем те же паттерны исключений для uploads
+        tar -C "${LOCAL_PROJECT_ROOT}/wordpress/wp-content" "${EXCLUDE_PATTERNS[@]}" \
+            -czf "${UPLOADS_ARCHIVE}" uploads
         
         UPLOADS_SIZE=$(du -h "${UPLOADS_ARCHIVE}" | cut -f1)
         echo "Uploads archive created: ${UPLOADS_SIZE}"

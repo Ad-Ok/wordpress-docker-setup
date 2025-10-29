@@ -120,10 +120,21 @@ backups/
 # ============================================
 # OS Files
 # ============================================
+# macOS
 .DS_Store
+__MACOSX/
+__MACOSX
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Windows
 Thumbs.db
 desktop.ini
 *.lnk
+ehthumbs.db
 
 # ============================================
 # WordPress Specific
