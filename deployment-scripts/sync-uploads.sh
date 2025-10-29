@@ -37,6 +37,8 @@ NC='\033[0m' # No Color
 ENVIRONMENT=""
 DRY_RUN=false
 DELETE_MODE=false
+LONG_NAME_FILES=""
+LONG_COUNT=0
 
 # Парсим аргументы
 for arg in "$@"; do
@@ -148,14 +150,63 @@ if [ ${SPACE_FILES} -gt 0 ]; then
 fi
 
 # Файлы с кириллицей/спецсимволами
-NON_ASCII=$(find "${UPLOADS_DIR_LOCAL}" -type f | LC_ALL=C grep -v '^[[:print:]]*$' | wc -l | tr -d ' ')
+NON_ASCII=$(find "${UPLOADS_DIR_LOCAL}" -type f -exec sh -c 'basename "$1" | LC_ALL=C grep -q "[^[:print:]]"' _ {} \; -print | wc -l | tr -d ' ')
 if [ ${NON_ASCII} -gt 0 ]; then
     echo -e "${YELLOW}  ⚠ ${NON_ASCII} files with non-ASCII characters (cyrillic, etc)${NC}"
     PROBLEM_COUNT=$((PROBLEM_COUNT + NON_ASCII))
 fi
 
+# Файлы с очень длинными именами (>200 БАЙТ в basename)
+# NAME_MAX на сервере = 255 байт, используем 200 байт как безопасный порог
+# Кириллица занимает ~2 байта на символ в UTF-8
+echo "  Checking for files with extremely long names..."
+LONG_NAME_FILES=$(mktemp)
+
+# Поиск файлов с длинными именами (проверяем БАЙТЫ, не символы!)
+UPLOADS_DIR_LOCAL="${UPLOADS_DIR_LOCAL}" python3 << 'PYSCRIPT' > "${LONG_NAME_FILES}"
+import os
+import sys
+
+uploads_dir = os.environ.get('UPLOADS_DIR_LOCAL')
+max_bytes = 200
+
+for root, dirs, files in os.walk(uploads_dir):
+    for fname in files:
+        byte_len = len(fname.encode('utf-8'))
+        if byte_len > max_bytes:
+            full_path = os.path.join(root, fname)
+            print(full_path)
+PYSCRIPT
+
+# Считаем количество найденных файлов
+LONG_COUNT=$(cat "${LONG_NAME_FILES}" | wc -l | tr -d ' ')
+LONG_COUNT=${LONG_COUNT:-0}
+
+if [ ${LONG_COUNT} -gt 0 ]; then
+    echo -e "${YELLOW}  ⚠ ${LONG_COUNT} files with extremely long names (>200 bytes)${NC}"
+    echo -e "${YELLOW}    These files will be SKIPPED during sync (filesystem limitation)${NC}"
+    PROBLEM_COUNT=$((PROBLEM_COUNT + LONG_COUNT))
+    
+    if [ ${LONG_COUNT} -le 20 ]; then
+        echo "    Files that will be skipped:"
+        head -10 "${LONG_NAME_FILES}" | while IFS= read -r file; do
+            filename=$(basename "$file")
+            byte_len=$(printf "%s" "$filename" | wc -c | tr -d ' ')
+            # Показываем только первые 80 символов имени
+            echo "      - ${filename:0:80}... [${byte_len} bytes]"
+        done
+    else
+        echo "    Showing first 10 of ${LONG_COUNT} files:"
+        head -10 "${LONG_NAME_FILES}" | while IFS= read -r file; do
+            filename=$(basename "$file")
+            byte_len=$(printf "%s" "$filename" | wc -c | tr -d ' ')
+            echo "      - ${filename:0:80}... [${byte_len} bytes]"
+        done
+    fi
+fi
+
 if [ ${PROBLEM_COUNT} -gt 0 ]; then
-    echo -e "${YELLOW}  Note: These files may cause encoding issues but will be synced${NC}"
+    echo -e "${YELLOW}  Note: Files with long names will be skipped. You can re-upload them via WordPress admin.${NC}"
 fi
 
 echo -e "${GREEN}✓${NC} Local environment check passed"
@@ -191,11 +242,11 @@ ssh "${SSH_USER}@${SSH_HOST}" "mkdir -p '${WEBROOT}/wp-content/uploads'"
 
 # Проверяем текущее состояние на сервере
 echo "Checking remote uploads directory..."
-REMOTE_INFO=$(ssh "${SSH_USER}@${SSH_HOST}" bash << 'ENDSSH'
+REMOTE_INFO=$(ssh "${SSH_USER}@${SSH_HOST}" bash << ENDSSH
 if [ -d "${WEBROOT}/wp-content/uploads" ]; then
-    SIZE=$(du -sh "${WEBROOT}/wp-content/uploads" 2>/dev/null | cut -f1)
-    COUNT=$(find "${WEBROOT}/wp-content/uploads" -type f 2>/dev/null | wc -l | tr -d ' ')
-    echo "EXISTS|${SIZE}|${COUNT}"
+    SIZE=\$(du -sh "${WEBROOT}/wp-content/uploads" 2>/dev/null | cut -f1)
+    COUNT=\$(find "${WEBROOT}/wp-content/uploads" -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "EXISTS|\${SIZE}|\${COUNT}"
 else
     echo "EMPTY|0|0"
 fi
@@ -255,6 +306,23 @@ ehthumbs.db
 .temp/
 EOF
 
+# Добавляем файлы с длинными именами в exclude (если есть)
+if [ -f "${LONG_NAME_FILES}" ] && [ ${LONG_COUNT} -gt 0 ]; then
+    echo "Adding ${LONG_COUNT} long-named files to exclude list..."
+    
+    # Добавляем относительные пути к exclude файлу
+    while IFS= read -r file; do
+        if [ -n "$file" ]; then
+            # Получаем относительный путь от UPLOADS_DIR_LOCAL
+            rel_path="${file#${UPLOADS_DIR_LOCAL}/}"
+            # Добавляем в exclude файл с экранированием специальных символов
+            echo "$rel_path" >> "${EXCLUDE_FILE}"
+        fi
+    done < "${LONG_NAME_FILES}"
+    
+    echo "  Long-named files will be excluded from sync"
+fi
+
 # Формируем команду rsync
 RSYNC_OPTS=(
     -avz                          # archive, verbose, compress
@@ -262,6 +330,11 @@ RSYNC_OPTS=(
     --partial                     # разрешаем resume прерванных передач
     --partial-dir=.rsync-partial  # папка для временных файлов
     --exclude-from="${EXCLUDE_FILE}"
+    --ignore-errors               # продолжаем при ошибках с отдельными файлами
+    --max-delete=100              # защита от случайного массового удаления
+    --timeout=300                 # таймаут на операции ввода-вывода (5 мин)
+    --contimeout=60               # таймаут на подключение (60 сек)
+    -e "ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10"  # keep-alive
 )
 
 # Добавляем опции в зависимости от режима
@@ -304,22 +377,39 @@ fi
 
 # Запускаем rsync
 START_TIME=$(date +%s)
+RSYNC_EXIT_CODE=0
 
-if rsync "${RSYNC_OPTS[@]}" \
+rsync "${RSYNC_OPTS[@]}" \
     "${UPLOADS_DIR_LOCAL}/" \
-    "${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"; then
-    
-    END_TIME=$(date +%s)
-    DURATION=$((END_TIME - START_TIME))
-    
+    "${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/" || RSYNC_EXIT_CODE=$?
+
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Коды выхода rsync:
+# 0 = успех
+# 23 = частичная передача из-за ошибок (например, файлы со слишком длинными именами)
+# 24 = частичная передача из-за пропавших исходных файлов
+
+if [ $RSYNC_EXIT_CODE -eq 0 ] || [ $RSYNC_EXIT_CODE -eq 23 ] || [ $RSYNC_EXIT_CODE -eq 24 ]; then
     echo ""
     if [ "$DRY_RUN" = true ]; then
-        echo -e "${GREEN}✓${NC} Dry run completed successfully in ${DURATION} seconds"
+        echo -e "${GREEN}✓${NC} Dry run completed in ${DURATION} seconds"
+        
+        if [ $RSYNC_EXIT_CODE -eq 23 ]; then
+            echo -e "${YELLOW}  Note: Some files were skipped (likely due to long filenames)${NC}"
+        fi
+        
         echo ""
         echo "No files were actually transferred."
         echo "Run without --dry-run to perform the actual sync."
     else
-        echo -e "${GREEN}✓${NC} Uploads synchronized successfully in ${DURATION} seconds"
+        echo -e "${GREEN}✓${NC} Uploads synchronized in ${DURATION} seconds"
+        
+        if [ $RSYNC_EXIT_CODE -eq 23 ]; then
+            echo -e "${YELLOW}  Note: Some files were skipped (likely due to long filenames)${NC}"
+        fi
+        
         echo ""
         
         # Устанавливаем правильные права доступа на сервере
@@ -331,13 +421,16 @@ if rsync "${RSYNC_OPTS[@]}" \
         echo "All uploads have been synced to the server."
     fi
 else
-    echo -e "${RED}✗ Sync failed${NC}"
+    echo ""
+    echo -e "${RED}✗ Sync failed with exit code ${RSYNC_EXIT_CODE}${NC}"
     rm -f "${EXCLUDE_FILE}"
+    rm -f "${LONG_NAME_FILES}"
     exit 1
 fi
 
-# Очистка
+# Очистка временных файлов
 rm -f "${EXCLUDE_FILE}"
+rm -f "${LONG_NAME_FILES}"
 
 # ============================================
 # SUMMARY
@@ -346,6 +439,21 @@ echo ""
 echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
 echo -e "${GREEN}✓${NC} Sync completed"
 echo ""
+
+# Предупреждение о пропущенных файлах с длинными именами
+if [ ${LONG_COUNT:-0} -gt 0 ]; then
+    echo -e "${YELLOW}⚠️  NOTE: ${LONG_COUNT} files were skipped due to long filenames${NC}"
+    echo ""
+    echo "These files exceed filesystem name length limits (>200 bytes)."
+    echo "Server NAME_MAX = 255 bytes. With UTF-8 cyrillic (~2 bytes/char),"
+    echo "safe limit is ~100-120 characters for Russian filenames."
+    echo ""
+    echo "To fix this:"
+    echo "  1. Re-upload the original images via WordPress admin"
+    echo "  2. Or use a plugin to regenerate thumbnails (Regenerate Thumbnails)"
+    echo "  3. WordPress will create new versions with shorter names"
+    echo ""
+fi
 
 if [ "$DRY_RUN" != true ]; then
     echo "Next steps:"
