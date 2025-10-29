@@ -13,13 +13,16 @@
 #      - Экспортирует локальную БД из MySQL контейнера
 #      - Загружает на сервер
 #      - Импортирует и выполняет search-replace URL
-# 6. Загружает WordPress core файлы
-# 6.5. Загружает wp-content/uploads
+# 6. Загружает WordPress core файлы (с фильтрацией мусора)
+# 6.5. Информирует о wp-content/uploads (загружаются отдельно через sync-uploads.sh)
 # 7. Устанавливает права доступа
 # 8. Создает deployment marker
 # 9. Настраивает HTTP аутентификацию (для DEV)
 # 10. Проверяет установку
 # 11. Проверяет подключение к базе данных
+#
+# ВАЖНО: wp-content/uploads НЕ загружаются этим скриптом!
+# Используйте ./sync-uploads.sh для синхронизации uploads отдельно.
 
 set -e
 
@@ -477,97 +480,49 @@ echo -e "${GREEN}✓${NC} .env file created and configured"
 echo ""
 
 # ============================================
-# STEP 6.5: Upload wp-content/uploads
+# STEP 6.5: wp-content/uploads Information
 # ============================================
-echo -e "${BLUE}═══ STEP 6.5/11: Uploading wp-content/uploads ═══${NC}"
+echo -e "${BLUE}═══ STEP 6.5/11: wp-content/uploads ═══${NC}"
 echo ""
 
 UPLOADS_DIR_LOCAL="${LOCAL_PROJECT_ROOT}/wordpress/wp-content/uploads"
 
 if [ -d "${UPLOADS_DIR_LOCAL}" ]; then
     # Проверяем размер uploads
-    UPLOADS_SIZE_MB=$(du -sm "${UPLOADS_DIR_LOCAL}" | cut -f1)
-    echo "Uploads directory size: ${UPLOADS_SIZE_MB} MB"
+    UPLOADS_SIZE=$(du -sh "${UPLOADS_DIR_LOCAL}" | cut -f1)
+    FILE_COUNT=$(find "${UPLOADS_DIR_LOCAL}" -type f | wc -l | tr -d ' ')
     
-    # Если uploads больше 500MB, предупреждаем
-    if [ ${UPLOADS_SIZE_MB} -gt 500 ]; then
-        echo -e "${YELLOW}⚠️  WARNING: Uploads directory is large (${UPLOADS_SIZE_MB} MB)${NC}"
-        echo "Upload may take a long time or fail due to connection timeout."
-        echo ""
-        
-        if [ -t 0 ]; then
-            read -p "Do you want to upload uploads now? (yes/no/skip): " -r UPLOAD_CONFIRM
-        else
-            read -r UPLOAD_CONFIRM < /dev/tty
-            echo "Upload uploads? (yes/no/skip): $UPLOAD_CONFIRM"
-        fi
-        
-        if [[ ! $UPLOAD_CONFIRM =~ ^[Yy][Ee][Ss]$ ]]; then
-            echo -e "${YELLOW}ℹ️  Skipping uploads. You can upload them manually later using rsync:${NC}"
-            echo "  rsync -avz --progress ${UPLOADS_DIR_LOCAL}/ ${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
-            echo ""
-            # Пропускаем uploads
-            echo -e "${GREEN}✓${NC} Uploads skipped (will need manual upload)"
-            echo ""
-            # Продолжаем без ошибки
-            SKIP_UPLOADS=true
-        fi
-    fi
+    echo "ℹ️  Local uploads directory detected:"
+    echo "  Path: ${UPLOADS_DIR_LOCAL}"
+    echo "  Size: ${UPLOADS_SIZE}"
+    echo "  Files: ${FILE_COUNT}"
+    echo ""
     
-    if [ "${SKIP_UPLOADS:-false}" != "true" ]; then
-        echo "Creating uploads archive..."
-        
-        UPLOADS_ARCHIVE=$(mktemp /tmp/wp_uploads_XXXXXX.tar.gz)
-        
-        # Используем те же паттерны исключений для uploads
-        tar -C "${LOCAL_PROJECT_ROOT}/wordpress/wp-content" "${EXCLUDE_PATTERNS[@]}" \
-            -czf "${UPLOADS_ARCHIVE}" uploads
-        
-        UPLOADS_SIZE=$(du -h "${UPLOADS_ARCHIVE}" | cut -f1)
-        echo "Uploads archive created: ${UPLOADS_SIZE}"
-        echo ""
-        
-        echo "Uploading uploads archive to server (this may take a while)..."
-        UPLOADS_BASENAME=$(basename "${UPLOADS_ARCHIVE}")
-        
-        # Пробуем загрузить с таймаутом и повторными попытками
-        UPLOAD_SUCCESS=false
-        for attempt in 1 2 3; do
-            echo "Upload attempt ${attempt}/3..."
-            if scp -o ConnectTimeout=30 -o ServerAliveInterval=60 "${UPLOADS_ARCHIVE}" "${SSH_USER}@${SSH_HOST}:/tmp/"; then
-                UPLOAD_SUCCESS=true
-                break
-            else
-                echo "Attempt ${attempt} failed"
-                sleep 5
-            fi
-        done
-        
-        if [ "${UPLOAD_SUCCESS}" != "true" ]; then
-            echo -e "${RED}✗ Uploads upload failed after 3 attempts${NC}"
-            echo -e "${YELLOW}You can upload uploads manually later using rsync:${NC}"
-            echo "  rsync -avz --progress ${UPLOADS_DIR_LOCAL}/ ${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
-            rm -f "${UPLOADS_ARCHIVE}"
-            # Не выходим с ошибкой, просто предупреждаем
-            echo -e "${YELLOW}⚠️  Continuing without uploads${NC}"
-            echo ""
-        else
-            echo "Extracting uploads on server..."
-            ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
-              set -e; \
-              mkdir -p '${WEBROOT}/wp-content'; \
-              tar -xzf /tmp/${UPLOADS_BASENAME} -C '${WEBROOT}/wp-content'; \
-              rm -f /tmp/${UPLOADS_BASENAME}; \
-            "
-            
-            # Удаляем локальный архив
-            rm -f "${UPLOADS_ARCHIVE}"
-            
-            echo -e "${GREEN}✓${NC} Uploads uploaded successfully"
-        fi
-    fi
+    echo -e "${YELLOW}⚠️  IMPORTANT: Uploads are NOT transferred during initial deployment${NC}"
+    echo ""
+    echo "Reason:"
+    echo "  • Large size may cause deployment timeouts"
+    echo "  • Better handled separately with rsync for reliability"
+    echo "  • Allows resume on connection failures"
+    echo ""
+    echo -e "${CYAN}To upload/sync uploads to server, use:${NC}"
+    echo ""
+    echo "  ${SCRIPT_DIR}/sync-uploads.sh ${ENVIRONMENT}"
+    echo ""
+    echo "This script:"
+    echo "  ✓ Uses rsync for reliable transfer"
+    echo "  ✓ Supports resume on connection failure"
+    echo "  ✓ Only transfers new/changed files"
+    echo "  ✓ Filters system junk files"
+    echo "  ✓ Shows progress and speed"
+    echo ""
+    echo "See UPLOADS_SYNC_GUIDE.md for detailed instructions."
+    echo ""
+    
+    echo -e "${GREEN}✓${NC} Uploads sync info provided"
 else
-    echo -e "${YELLOW}ℹ️  No local uploads directory found - skipping${NC}"
+    echo -e "${YELLOW}ℹ️  No local uploads directory found${NC}"
+    echo "This is normal for a fresh WordPress installation."
 fi
 
 echo ""
