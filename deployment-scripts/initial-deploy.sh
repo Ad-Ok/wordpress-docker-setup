@@ -2,6 +2,24 @@
 # 🚀 Initial Deployment Script
 # Первый деплой: загружает полную инфраструктуру WordPress на сервер
 # Использовать только для первоначального развёртывания!
+#
+# Что делает:
+# 1. Проверяет локальное окружение
+# 2. Проверяет SSH соединение
+# 3. Проверяет состояние сервера
+# 4. Подготавливает директории на сервере
+# 5. Клонирует Git репозиторий на сервере
+# 5.5. Загружает базу данных с локального Docker
+#      - Экспортирует локальную БД из MySQL контейнера
+#      - Загружает на сервер
+#      - Импортирует и выполняет search-replace URL
+# 6. Загружает WordPress core файлы
+# 6.5. Загружает wp-content/uploads
+# 7. Устанавливает права доступа
+# 8. Создает deployment marker
+# 9. Настраивает HTTP аутентификацию (для DEV)
+# 10. Проверяет установку
+# 11. Проверяет подключение к базе данных
 
 set -e
 
@@ -56,6 +74,7 @@ echo -e "${YELLOW}⚠️  WARNING: Initial Deployment${NC}"
 echo ""
 echo "This script will:"
 echo "  • Clone Git repository on server"
+echo "  • Upload and import local database (with URL replacement)"
 echo "  • Upload WordPress core files (excluding wp-content)"
 echo "  • Upload wp-content/uploads separately"
 echo "  • Setup proper permissions"
@@ -245,9 +264,145 @@ echo -e "${GREEN}✓${NC} Git repository cloned successfully"
 echo ""
 
 # ============================================
+# STEP 5.5: Database Upload from Local
+# ============================================
+echo -e "${BLUE}═══ STEP 5.5/10: Uploading Database from Local ═══${NC}"
+echo ""
+
+echo "This will upload your local database to the server."
+echo "Assumption: Local database is up-to-date and matches the current Git branch."
+echo ""
+
+# Проверяем Docker
+if ! docker ps &> /dev/null; then
+    echo -e "${RED}✗ Docker is not running${NC}"
+    echo "Please start Docker and ensure MySQL container is running."
+    exit 1
+fi
+
+if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
+    echo -e "${YELLOW}⚠️  MySQL container is not running. Starting...${NC}"
+    docker start "${LOCAL_DB_CONTAINER}" || {
+        echo -e "${RED}✗ Failed to start MySQL container${NC}"
+        exit 1
+    }
+    sleep 3
+fi
+
+echo "Checking local database connection..."
+if ! docker exec "${LOCAL_DB_CONTAINER}" mysql -u"${LOCAL_DB_USER}" -p"${LOCAL_DB_PASS}" -e "SELECT 1" &> /dev/null; then
+    echo -e "${RED}✗ Cannot connect to local database${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Local database connection OK"
+echo ""
+
+# Создаём backup на удаленном сервере (если БД уже существует)
+echo "[1/4] Creating remote database backup (if exists)..."
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  set -e; \
+  if command -v wp &> /dev/null; then \
+    cd '${WEBROOT}' 2>/dev/null || cd /; \
+    if wp db check 2>/dev/null; then \
+      mkdir -p '${BACKUP_DIR}'; \
+      echo '→ Creating backup...'; \
+      wp db export '${BACKUP_DIR}/backup-before-initial-deploy-\$(date +%Y%m%d_%H%M%S).sql.gz' 2>/dev/null || true; \
+      echo '✓ Backup created'; \
+    else \
+      echo 'ℹ️  No existing database to backup'; \
+    fi; \
+  else \
+    echo 'ℹ️  WP-CLI not available, skipping backup'; \
+  fi; \
+"
+
+echo ""
+
+# Экспортируем локальную БД
+echo "[2/4] Exporting local database..."
+LOCAL_DB_DUMP=$(mktemp /tmp/db_initial_deploy_XXXXXX.sql.gz)
+
+docker exec "${LOCAL_DB_CONTAINER}" \
+    mysqldump \
+    -u"${LOCAL_DB_USER}" \
+    -p"${LOCAL_DB_PASS}" \
+    "${LOCAL_DB_NAME}" \
+    2>/dev/null | gzip > "${LOCAL_DB_DUMP}"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ Failed to export local database${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database export error"
+    exit 1
+fi
+
+DB_SIZE=$(du -h "${LOCAL_DB_DUMP}" | cut -f1)
+echo -e "${GREEN}✓${NC} Database exported (${DB_SIZE})"
+echo ""
+
+# Загружаем БД на сервер
+echo "[3/4] Uploading database to server..."
+DB_DUMP_BASENAME=$(basename "${LOCAL_DB_DUMP}")
+scp -q "${LOCAL_DB_DUMP}" "${SSH_USER}@${SSH_HOST}:/tmp/" || {
+    echo -e "${RED}✗ Database upload failed${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database upload error"
+    exit 1
+}
+
+echo -e "${GREEN}✓${NC} Database uploaded"
+echo ""
+
+# Импортируем БД на сервере и выполняем search-replace
+echo "[4/4] Importing database and replacing URLs..."
+
+# Определяем какие URL нужно заменить
+SOURCE_URL="${LOCAL_SITE_URL}"
+TARGET_URL="${SITE_URL}"
+
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  set -e; \
+  cd '${WEBROOT}'; \
+  
+  echo '→ Importing database...'; \
+  gunzip -c /tmp/${DB_DUMP_BASENAME} | wp db import - 2>/dev/null || exit 1; \
+  echo '✓ Database imported'; \
+  
+  echo '→ Replacing URLs: ${SOURCE_URL} → ${TARGET_URL}'; \
+  wp search-replace '${SOURCE_URL}' '${TARGET_URL}' \
+    --precise \
+    --recurse-objects \
+    --all-tables \
+    --skip-columns=guid \
+    2>/dev/null || exit 1; \
+  echo '✓ URLs replaced'; \
+  
+  echo '→ Flushing cache...'; \
+  wp cache flush 2>/dev/null || true; \
+  wp rewrite flush 2>/dev/null || true; \
+  echo '✓ Cache flushed'; \
+  
+  rm -f /tmp/${DB_DUMP_BASENAME}; \
+"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ Database import/replace failed${NC}"
+    rm -f "${LOCAL_DB_DUMP}"
+    send_notification "❌ Initial deployment failed: Database import error"
+    exit 1
+fi
+
+# Удаляем локальный дамп
+rm -f "${LOCAL_DB_DUMP}"
+
+echo -e "${GREEN}✓${NC} Database uploaded and configured successfully"
+echo ""
+
+# ============================================
 # STEP 6: Upload WordPress Core Files (excluding wp-content)
 # ============================================
-echo -e "${BLUE}═══ STEP 6/8: Uploading WordPress Core Files ═══${NC}"
+echo -e "${BLUE}═══ STEP 6/10: Uploading WordPress Core Files ═══${NC}"
 echo ""
 
 echo "Creating archive of WordPress core (excluding wp-content)..."
@@ -302,7 +457,7 @@ echo ""
 # ============================================
 # STEP 6.5: Upload wp-content/uploads
 # ============================================
-echo -e "${BLUE}═══ STEP 6.5/9: Uploading wp-content/uploads ═══${NC}"
+echo -e "${BLUE}═══ STEP 6.5/11: Uploading wp-content/uploads ═══${NC}"
 echo ""
 
 UPLOADS_DIR_LOCAL="${LOCAL_PROJECT_ROOT}/wordpress/wp-content/uploads"
@@ -395,7 +550,7 @@ echo ""
 # ============================================
 # STEP 7: Set Permissions
 # ============================================
-echo -e "${BLUE}═══ STEP 7/9: Setting Permissions ═══${NC}"
+echo -e "${BLUE}═══ STEP 7/11: Setting Permissions ═══${NC}"
 echo ""
 
 ssh "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
@@ -426,7 +581,7 @@ echo ""
 # ============================================
 # STEP 8: Create Deployment Marker
 # ============================================
-echo -e "${BLUE}═══ STEP 8/9: Creating Deployment Marker ═══${NC}"
+echo -e "${BLUE}═══ STEP 8/11: Creating Deployment Marker ═══${NC}"
 echo ""
 
 ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
@@ -451,7 +606,7 @@ echo ""
 # STEP 9: Setup HTTP Authentication for DEV
 # ============================================
 if [ "$ENVIRONMENT" == "dev" ]; then
-    echo -e "${BLUE}═══ STEP 9/10: Setting up HTTP Authentication ═══${NC}"
+    echo -e "${BLUE}═══ STEP 9/11: Setting up HTTP Authentication ═══${NC}"
     echo ""
     
     echo "Creating htpasswd protection for dev environment..."
@@ -502,14 +657,14 @@ ENDSSH
     echo -e "  Password: ${YELLOW}test${NC}"
     echo ""
 else
-    echo -e "${BLUE}═══ STEP 9/10: Skipping HTTP Authentication (PROD) ═══${NC}"
+    echo -e "${BLUE}═══ STEP 9/11: Skipping HTTP Authentication (PROD) ═══${NC}"
     echo ""
 fi
 
 # ============================================
 # STEP 10: Verification
 # ============================================
-echo -e "${BLUE}═══ STEP 10/10: Verifying Installation ═══${NC}"
+echo -e "${BLUE}═══ STEP 10/11: Verifying Installation ═══${NC}"
 echo ""
 
 VERIFICATION=$(ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH
@@ -559,6 +714,40 @@ ENDSSH
 echo ""
 
 # ============================================
+# STEP 11: Final Database Verification
+# ============================================
+echo -e "${BLUE}═══ STEP 11/11: Verifying Database Connection ═══${NC}"
+echo ""
+
+DB_CHECK=$(ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  cd '${WEBROOT}'; \
+  if wp db check 2>/dev/null; then \
+    echo 'OK'; \
+  else \
+    echo 'FAILED'; \
+  fi \
+")
+
+if [[ "$DB_CHECK" == *"OK"* ]]; then
+    echo -e "${GREEN}✓${NC} Database connection verified"
+    
+    # Показываем информацию о БД
+    echo ""
+    echo "Database information:"
+    ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+      cd '${WEBROOT}'; \
+      echo '  Tables: \$(wp db query \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE();\" --skip-column-names 2>/dev/null)'; \
+      echo '  Site URL: \$(wp option get siteurl 2>/dev/null)'; \
+      echo '  Home URL: \$(wp option get home 2>/dev/null)'; \
+    "
+else
+    echo -e "${YELLOW}⚠️  Warning: Could not verify database connection${NC}"
+    echo "Please check database credentials in wp-config.php"
+fi
+
+echo ""
+
+# ============================================
 # SUCCESS
 # ============================================
 echo -e "${MAGENTA}╔════════════════════════════════════════════════╗${NC}"
@@ -569,6 +758,7 @@ echo ""
 echo -e "${GREEN}✓${NC} WordPress fully deployed to ${ENV_UPPER}"
 echo -e "  Location: ${WEBROOT}"
 echo -e "  Site URL: ${SITE_URL}"
+echo -e "  Database: Imported and configured"
 echo ""
 
 if [ "$ENVIRONMENT" == "dev" ]; then
@@ -579,12 +769,12 @@ if [ "$ENVIRONMENT" == "dev" ]; then
 fi
 
 echo -e "${BLUE}Next steps:${NC}"
-echo "  1. Verify wp-config.php database settings"
-echo "  2. Run database import if needed"
-echo "  3. Test the site: ${SITE_URL}"
+echo "  1. Test the site: ${SITE_URL}"
 if [ "$ENVIRONMENT" == "dev" ]; then
     echo "     (use test/test for HTTP authentication)"
 fi
+echo "  2. Verify WordPress admin access"
+echo "  3. Check all pages and functionality"
 echo "  4. Use regular deploy scripts for future updates"
 echo ""
 
