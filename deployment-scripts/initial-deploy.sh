@@ -411,6 +411,7 @@ if [ "$ENVIRONMENT" == "prod" ]; then
     ENV_WP_DEBUG="false"
     ENV_WP_DEBUG_LOG="true"
     ENV_WP_DEBUG_DISPLAY="false"
+    ENV_WP_SUPER_CACHE_PATH="$PROD_WP_SUPER_CACHE_PATH"
 else
     ENV_DB_NAME="$DEV_DB_NAME"
     ENV_DB_USER="$DEV_DB_USER"
@@ -422,6 +423,7 @@ else
     ENV_WP_DEBUG="true"
     ENV_WP_DEBUG_LOG="true"
     ENV_WP_DEBUG_DISPLAY="false"
+    ENV_WP_SUPER_CACHE_PATH="$DEV_WP_SUPER_CACHE_PATH"
 fi
 
 echo "Creating .env file on server..."
@@ -471,6 +473,9 @@ AUTH_SALT='$(openssl rand -base64 48)'
 SECURE_AUTH_SALT='$(openssl rand -base64 48)'
 LOGGED_IN_SALT='$(openssl rand -base64 48)'
 NONCE_SALT='$(openssl rand -base64 48)'
+
+# WP Super Cache Path
+WPCACHEHOME=${ENV_WP_SUPER_CACHE_PATH}
 ENVEOF
 
 # Устанавливаем права доступа

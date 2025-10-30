@@ -113,3 +113,10 @@ REQUIRE_CONFIRMATION="true"
 
 # Режим dry-run по умолчанию (для тестирования)
 DRY_RUN="false"
+
+# ============================================
+# ПУТИ КЭШИРОВАНИЯ WP SUPER CACHE
+# ============================================
+PROD_WP_SUPER_CACHE_PATH="/home/your_user/your-domain.com/wp-content/plugins/wp-super-cache/"
+DEV_WP_SUPER_CACHE_PATH="/home/your_user/dev.your-domain.com/wp-content/plugins/wp-super-cache/"
+LOCAL_WP_SUPER_CACHE_PATH="/var/www/html/wp-content/plugins/wp-super-cache/"
