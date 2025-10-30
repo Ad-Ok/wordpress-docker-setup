@@ -120,3 +120,18 @@ DRY_RUN="false"
 PROD_WP_SUPER_CACHE_PATH="/home/your_user/your-domain.com/wp-content/plugins/wp-super-cache/"
 DEV_WP_SUPER_CACHE_PATH="/home/your_user/dev.your-domain.com/wp-content/plugins/wp-super-cache/"
 LOCAL_WP_SUPER_CACHE_PATH="/var/www/html/wp-content/plugins/wp-super-cache/"
+
+# ============================================
+# НАСТРОЙКИ ОТЛАДКИ WORDPRESS
+# ============================================
+PROD_WP_DEBUG="false"
+PROD_WP_DEBUG_LOG="false"
+PROD_WP_DEBUG_DISPLAY="false"
+
+DEV_WP_DEBUG="true"
+DEV_WP_DEBUG_LOG="true"
+DEV_WP_DEBUG_DISPLAY="true"
+
+LOCAL_WP_DEBUG="true"
+LOCAL_WP_DEBUG_LOG="true"
+LOCAL_WP_DEBUG_DISPLAY="false"
