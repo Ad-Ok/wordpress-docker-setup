@@ -426,6 +426,33 @@ else
     ENV_WP_SUPER_CACHE_PATH="$DEV_WP_SUPER_CACHE_PATH"
 fi
 
+# Генерация ключей аутентификации
+if [ "$ENVIRONMENT" == "prod" ]; then
+    echo "Generating random auth keys for production..."
+    # Используем утилиту для генерации ключей
+    KEYS_OUTPUT=$("${SCRIPT_DIR}/utils/generate-wp-keys.sh")
+    # Извлекаем значения из вывода
+    ENV_AUTH_KEY=$(echo "$KEYS_OUTPUT" | grep "AUTH_KEY=" | cut -d'=' -f2-)
+    ENV_SECURE_AUTH_KEY=$(echo "$KEYS_OUTPUT" | grep "SECURE_AUTH_KEY=" | cut -d'=' -f2-)
+    ENV_LOGGED_IN_KEY=$(echo "$KEYS_OUTPUT" | grep "LOGGED_IN_KEY=" | cut -d'=' -f2-)
+    ENV_NONCE_KEY=$(echo "$KEYS_OUTPUT" | grep "NONCE_KEY=" | cut -d'=' -f2-)
+    ENV_AUTH_SALT=$(echo "$KEYS_OUTPUT" | grep "AUTH_SALT=" | cut -d'=' -f2-)
+    ENV_SECURE_AUTH_SALT=$(echo "$KEYS_OUTPUT" | grep "SECURE_AUTH_SALT=" | cut -d'=' -f2-)
+    ENV_LOGGED_IN_SALT=$(echo "$KEYS_OUTPUT" | grep "LOGGED_IN_SALT=" | cut -d'=' -f2-)
+    ENV_NONCE_SALT=$(echo "$KEYS_OUTPUT" | grep "NONCE_SALT=" | cut -d'=' -f2-)
+else
+    echo "Using default auth keys for development..."
+    # Фиксированные ключи для разработки
+    ENV_AUTH_KEY="'dev-auth-key-placeholder'"
+    ENV_SECURE_AUTH_KEY="'dev-secure-auth-key-placeholder'"
+    ENV_LOGGED_IN_KEY="'dev-logged-in-key-placeholder'"
+    ENV_NONCE_KEY="'dev-nonce-key-placeholder'"
+    ENV_AUTH_SALT="'dev-auth-salt-placeholder'"
+    ENV_SECURE_AUTH_SALT="'dev-secure-auth-salt-placeholder'"
+    ENV_LOGGED_IN_SALT="'dev-logged-in-salt-placeholder'"
+    ENV_NONCE_SALT="'dev-nonce-salt-placeholder'"
+fi
+
 echo "Creating .env file on server..."
 
 # Создаём .env файл на сервере
@@ -465,14 +492,14 @@ WP_DEBUG_LOG=${ENV_WP_DEBUG_LOG}
 WP_DEBUG_DISPLAY=${ENV_WP_DEBUG_DISPLAY}
 
 # Security Keys - Generated on $(date)
-AUTH_KEY='$(openssl rand -base64 48)'
-SECURE_AUTH_KEY='$(openssl rand -base64 48)'
-LOGGED_IN_KEY='$(openssl rand -base64 48)'
-NONCE_KEY='$(openssl rand -base64 48)'
-AUTH_SALT='$(openssl rand -base64 48)'
-SECURE_AUTH_SALT='$(openssl rand -base64 48)'
-LOGGED_IN_SALT='$(openssl rand -base64 48)'
-NONCE_SALT='$(openssl rand -base64 48)'
+${ENV_AUTH_KEY}
+${ENV_SECURE_AUTH_KEY}
+${ENV_LOGGED_IN_KEY}
+${ENV_NONCE_KEY}
+${ENV_AUTH_SALT}
+${ENV_SECURE_AUTH_SALT}
+${ENV_LOGGED_IN_SALT}
+${ENV_NONCE_SALT}
 
 # WP Super Cache Path
 WPCACHEHOME=${ENV_WP_SUPER_CACHE_PATH}
