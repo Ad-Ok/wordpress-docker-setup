@@ -390,6 +390,15 @@ ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
 # Удаляем локальный архив
 rm -f "${CORE_ARCHIVE}"
 
+# Очистка macOS мусорных файлов на сервере
+echo "Cleaning up macOS metadata files..."
+ssh "${SSH_USER}@${SSH_HOST}" bash -lc "\
+  cd '${WEBROOT}' && \
+  find . -type f -name '._*' -delete && \
+  find . -type f -name '.DS_Store' -delete && \
+  find . -type d -name '__MACOSX' -exec rm -rf {} + 2>/dev/null || true \
+"
+
 echo -e "${GREEN}✓${NC} WordPress core files uploaded successfully"
 echo ""
 
