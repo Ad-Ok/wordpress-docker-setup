@@ -29,7 +29,7 @@ cd www/deployment-scripts/database
 ### Создать миграцию
 ```bash
 ./db-create-migration.sh "add new table"
-# Редактируйте: migrations/00X_add_new_table.sql
+# Редактируйте: ../../wordpress/database/migrations/00X_add_new_table.sql
 ```
 
 ### Применить миграции
@@ -38,6 +38,8 @@ cd www/deployment-scripts/database
 ./db-migrate.sh apply dev     # Потом на DEV
 ./db-migrate.sh apply prod    # После тестов на PROD
 ```
+
+**Важно:** SQL файлы миграций хранятся в `wordpress/database/migrations/` (в сабмодуле).
 
 ---
 
