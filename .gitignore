@@ -65,3 +65,4 @@ wp-content/cache/
 
 # WordPress core files (temporary - will be restructured)
 # wordpress/
+.applied.json
