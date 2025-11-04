@@ -161,20 +161,7 @@ echo ""
 echo -e "${BLUE}═══ STEP 4/5: Running Migrations ═══${NC}"
 echo ""
 
-ssh "${DEV_SSH_USER}@${DEV_SSH_HOST}" << ENDSSH
-cd ${DEV_WP_PATH}
-
-if [ -f "wp-content/migrations/migration_runner.php" ]; then
-    echo "Checking migrations..."
-    wp your-project migrate:status || true
-    
-    echo ""
-    echo "Running migrations..."
-    wp your-project migrate || echo "No migrations to run"
-else
-    echo "No migrations directory found"
-fi
-ENDSSH
+./database/db-migrate.sh apply dev
 
 echo -e "${GREEN}✓${NC} Migrations checked"
 echo ""
