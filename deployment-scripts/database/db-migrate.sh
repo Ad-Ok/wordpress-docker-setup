@@ -8,8 +8,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
-# Директория миграций
-MIGRATIONS_DIR="${SCRIPT_DIR}/database/migrations"
+# Директория миграций (теперь в сабмодуле wordpress)
+MIGRATIONS_DIR="${LOCAL_MIGRATIONS_DIR}"
 APPLIED_LOG="${MIGRATIONS_DIR}/.applied.json"
 
 # Цвета
