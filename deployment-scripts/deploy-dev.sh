@@ -161,7 +161,7 @@ echo ""
 echo -e "${BLUE}═══ STEP 4/5: Running Migrations ═══${NC}"
 echo ""
 
-./database/db-migrate.sh apply dev
+"${SCRIPT_DIR}/database/db-migrate.sh" apply dev
 
 echo -e "${GREEN}✓${NC} Migrations checked"
 echo ""
