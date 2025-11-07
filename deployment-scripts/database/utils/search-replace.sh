@@ -63,8 +63,8 @@ search_replace_local() {
         exit 1
     fi
     
-    # Выполнить search-replace через WP-CLI в контейнере
-    docker exec "$db_container" wp search-replace \
+    # Выполнить search-replace через WP-CLI в PHP контейнере
+    docker exec wordpress_php wp search-replace \
         "$from_url" "$to_url" \
         --path="$wp_path" \
         --precise \
@@ -72,6 +72,7 @@ search_replace_local() {
         --all-tables \
         --report-changed-only \
         --skip-columns=guid \
+        --allow-root \
         2>&1 | while IFS= read -r line; do
             echo -e "   $line"
         done
@@ -81,11 +82,11 @@ search_replace_local() {
         
         # Очистить кэш
         echo -e "\n${CYAN}→ Очистка кэша...${NC}"
-        docker exec "$db_container" wp cache flush --path="$wp_path" 2>/dev/null || true
+        docker exec wordpress_php wp cache flush --path="$wp_path" --allow-root 2>/dev/null || true
         
         # Обновить permalinks
         echo -e "${CYAN}→ Обновление permalinks...${NC}"
-        docker exec "$db_container" wp rewrite flush --path="$wp_path" 2>/dev/null || true
+        docker exec wordpress_php wp rewrite flush --path="$wp_path" --allow-root 2>/dev/null || true
         
         echo -e "${GREEN}✓ Готово!${NC}"
         return 0
