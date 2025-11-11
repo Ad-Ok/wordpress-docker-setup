@@ -1,108 +1,85 @@
-# 📋 Database Management - Шпаргалка
+# 📊 Database Analysis - Quick Reference
 
-## 🚀 Первая установка
+## Запуск анализа
 
 ```bash
-cd www/deployment-scripts/database
-./install-hooks.sh
+# Локальная БД
+./db-analyze.sh local
+
+# DEV
+./db-analyze.sh dev
+
+# PROD  
+./db-analyze.sh prod
 ```
 
----
+## Интерпретация метрик
 
-## 🔄 Частые команды
+### ✅ Хорошо
+- Database size соответствует контенту
+- Fragmentation < 5 MB
+- Autoload size < 1 MB
+- Transients < 100
+- Revisions < 100
+- Нет orphaned данных
+- Нет спама
 
-### Загрузить свежие данные с продакшена
-```bash
-./db-sync.sh pull prod
+### ⚠️ Требует внимания
+- Fragmentation 5-20 MB
+- Autoload size 1-3 MB
+- Transients 100-500
+- Revisions 100-1000
+
+### 🚨 Критично
+- Fragmentation > 20 MB (>10% от размера БД)
+- Autoload size > 3 MB
+- Transients > 500
+- Revisions > 1000
+- Много orphaned данных
+
+## Быстрые исправления
+
+### Дефрагментация таблиц
+```sql
+-- Одна таблица
+OPTIMIZE TABLE wp_posts;
+
+-- Несколько таблиц
+OPTIMIZE TABLE wp_posts, wp_postmeta, wp_options;
+
+-- Все основные таблицы
+OPTIMIZE TABLE wp_options, wp_postmeta, wp_posts, 
+               wp_comments, wp_termmeta, wp_terms;
 ```
 
-### Создать snapshot перед изменениями
-```bash
-./db-snapshot.sh create "описание"
+### Очистить transient
+```sql
+DELETE FROM wp_options 
+WHERE option_name LIKE '_transient_%';
 ```
 
-### Откатить изменения
-```bash
-./db-snapshot.sh restore latest
+### Удалить старые ревизии
+```sql
+DELETE FROM wp_posts 
+WHERE post_type = 'revision' 
+  AND post_modified < DATE_SUB(NOW(), INTERVAL 30 DAY);
 ```
 
-### Создать миграцию
-```bash
-./db-create-migration.sh "add new table"
-# Редактируйте: ../../wordpress/database/migrations/00X_add_new_table.sql
+### Удалить спам
+```sql
+DELETE FROM wp_comments WHERE comment_approved = 'spam';
 ```
 
-### Применить миграции
-```bash
-./db-migrate.sh apply local   # Тест локально
-./db-migrate.sh apply dev     # Потом на DEV
-./db-migrate.sh apply prod    # После тестов на PROD
+### Оптимизировать таблицы
+```sql
+OPTIMIZE TABLE wp_options, wp_postmeta, wp_posts;
 ```
 
-**Важно:** SQL файлы миграций хранятся в `wordpress/database/migrations/` (в сабмодуле).
+## Отчеты
 
----
-
-## 📖 Полная документация
-
-Читайте: [README.md](./README.md)
-
----
-
-## 🆘 Что-то пошло не так?
-
-```bash
-# Восстановить последний snapshot
-./db-snapshot.sh restore latest
-
-# Посмотреть все snapshots
-./db-snapshot.sh list
-
-# Проверить Docker
-docker ps | grep mysql
-
-# Помощь
-./db-snapshot.sh help
-./db-sync.sh help
-./db-migrate.sh help
+Сохраняются в:
 ```
-
----
-
-## 🎯 Ваши 4 сценария
-
-### 1. LOCAL → PROD (initial deploy)
-```bash
-./db-sync.sh push prod
-```
-
-### 2. PROD → LOCAL (обновить данные)
-```bash
-./db-sync.sh pull prod
-```
-
-### 3. LOCAL → DEV (миграции)
-```bash
-./db-migrate.sh apply dev
-```
-
-### 4. DEV → PROD (миграции)
-```bash
-./db-migrate.sh apply prod
-```
-
----
-
-## 🔀 Переключение веток
-
-**Автоматически** (если установлен hook):
-```bash
-git checkout feature/blog  # БД переключается автоматически
-```
-
-**Вручную**:
-```bash
-./db-snapshot.sh create    # Сохранить текущую
-git checkout feature/blog
-./db-snapshot.sh restore latest  # Восстановить для новой ветки
+wordpress/database/reports/
+├── db-analysis-local-YYYYMMDD_HHMMSS.txt
+└── db-analysis-local-YYYYMMDD_HHMMSS.json
 ```
