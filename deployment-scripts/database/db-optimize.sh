@@ -103,7 +103,19 @@ run_query() {
     if [ "$ENVIRONMENT" == "local" ]; then
         echo "$query" | docker exec -i "${DB_CONTAINER}" mysql -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -N 2>/dev/null
     else
+        # Для удаленных серверов
         ssh "${SSH_USER}@${SSH_HOST}" "mysql -u'${DB_USER}' -p'${DB_PASS}' '${DB_NAME}' -N -e \"${query}\"" 2>/dev/null | grep -v "Using a password"
+    fi
+}
+
+# Функция выполнения SQL команды (для DELETE/UPDATE/OPTIMIZE)
+run_command() {
+    local query="$1"
+    if [ "$ENVIRONMENT" == "local" ]; then
+        echo "$query" | docker exec -i "${DB_CONTAINER}" mysql -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" 2>/dev/null || echo "Warning: Command failed: $query"
+    else
+        # Для удаленных серверов
+        ssh "${SSH_USER}@${SSH_HOST}" "mysql -u'${DB_USER}' -p'${DB_PASS}' '${DB_NAME}' -e \"${query}\"" 2>/dev/null | grep -v "Using a password" || echo "Warning: Command failed: $query"
     fi
 }
 
@@ -168,7 +180,7 @@ if [ "$REVISIONS_COUNT" -gt 0 ]; then
     log "Post Revisions: ${REVISIONS_COUNT}"
     
     if [ "$DRY_RUN" = false ]; then
-        run_query "DELETE FROM wp_posts WHERE post_type = 'revision';" > /dev/null
+        run_command "DELETE FROM wp_posts WHERE post_type = 'revision';" > /dev/null
         echo -e "  ${GREEN}✓ Deleted${NC}"
         log "  → Deleted"
     else
@@ -194,7 +206,7 @@ if [ "$TRASH_COUNT" -gt 0 ]; then
     log "Trash Posts: ${TRASH_COUNT}"
     
     if [ "$DRY_RUN" = false ]; then
-        run_query "DELETE FROM wp_posts WHERE post_status = 'trash';" > /dev/null
+        run_command "DELETE FROM wp_posts WHERE post_status = 'trash';" > /dev/null
         echo -e "  ${GREEN}✓ Deleted${NC}"
         log "  → Deleted"
     else
@@ -222,8 +234,8 @@ if [ "$SPAM_COUNT" -gt 0 ] || [ "$TRASH_COMMENTS" -gt 0 ]; then
     log "Trash Comments: ${TRASH_COMMENTS}"
     
     if [ "$DRY_RUN" = false ]; then
-        run_query "DELETE FROM wp_comments WHERE comment_approved IN ('spam', 'trash');" > /dev/null
-        run_query "DELETE FROM wp_commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM wp_comments);" > /dev/null
+        run_command "DELETE FROM wp_comments WHERE comment_approved IN ('spam', 'trash');" > /dev/null
+        run_command "DELETE FROM wp_commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM wp_comments);" > /dev/null
         echo -e "  ${GREEN}✓ Deleted comments and their meta${NC}"
         log "  → Deleted"
     else
@@ -259,7 +271,7 @@ if [ "$DRY_RUN" = false ]; then
     while IFS= read -r table; do
         if [ -n "$table" ]; then
             echo -ne "  ${table}...\r"
-            run_query "OPTIMIZE TABLE ${table};" > /dev/null 2>&1
+            run_command "OPTIMIZE TABLE ${table};" > /dev/null 2>&1
             ((OPTIMIZED++))
         fi
     done <<< "$TABLES"

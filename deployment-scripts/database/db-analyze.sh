@@ -48,6 +48,8 @@ elif [ "$ENVIRONMENT" == "dev" ]; then
     DB_NAME="$DEV_DB_NAME"
     DB_USER="$DEV_DB_USER"
     DB_PASS="$DEV_DB_PASS"
+    SSH_USER="$DEV_SSH_USER"
+    SSH_HOST="$DEV_SSH_HOST"
     MYSQL_CMD="ssh ${DEV_SSH_USER}@${DEV_SSH_HOST} \"mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}\""
     
 elif [ "$ENVIRONMENT" == "prod" ]; then
@@ -57,6 +59,8 @@ elif [ "$ENVIRONMENT" == "prod" ]; then
     DB_NAME="$PROD_DB_NAME"
     DB_USER="$PROD_DB_USER"
     DB_PASS="$PROD_DB_PASS"
+    SSH_USER="$PROD_SSH_USER"
+    SSH_HOST="$PROD_SSH_HOST"
     MYSQL_CMD="ssh ${PROD_SSH_USER}@${PROD_SSH_HOST} \"mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}\""
     
 else
