@@ -89,9 +89,32 @@ get_applied_migrations() {
     local environment="$1"
     init_applied_log
     
-    jq -r --arg env "$environment" \
-        '.migrations[] | select(.environment == $env) | .file' \
-        "$APPLIED_LOG" 2>/dev/null || true
+    # Для удаленных окружений читаем файл с сервера
+    if [ "$environment" == "dev" ] || [ "$environment" == "prod" ]; then
+        local SSH_USER SSH_HOST REMOTE_MIGRATIONS_DIR
+        
+        case "$environment" in
+            dev)
+                SSH_USER="$DEV_SSH_USER"
+                SSH_HOST="$DEV_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$DEV_MIGRATIONS_DIR"
+                ;;
+            prod)
+                SSH_USER="$PROD_SSH_USER"
+                SSH_HOST="$PROD_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$PROD_MIGRATIONS_DIR"
+                ;;
+        esac
+        
+        ssh "${SSH_USER}@${SSH_HOST}" "cat ${REMOTE_MIGRATIONS_DIR}/.applied.json 2>/dev/null || echo '{\"migrations\": []}'" | \
+            jq -r --arg env "$environment" \
+                '.migrations[] | select(.environment == $env) | .file' 2>/dev/null || true
+    else
+        # Локально читаем локальный файл
+        jq -r --arg env "$environment" \
+            '.migrations[] | select(.environment == $env) | .file' \
+            "$APPLIED_LOG" 2>/dev/null || true
+    fi
 }
 
 # Проверить, применена ли миграция
@@ -111,18 +134,64 @@ mark_migration_applied() {
     init_applied_log
     
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    local temp_file=$(mktemp)
     
-    jq --arg file "$migration_file" \
-       --arg env "$environment" \
-       --arg ts "$timestamp" \
-       '.migrations += [{
-           "file": $file,
-           "environment": $env,
-           "applied_at": $ts
-       }]' "$APPLIED_LOG" > "$temp_file"
-    
-    mv "$temp_file" "$APPLIED_LOG"
+    # Для удаленных окружений обновляем файл на сервере
+    if [ "$environment" == "dev" ] || [ "$environment" == "prod" ]; then
+        local SSH_USER SSH_HOST REMOTE_MIGRATIONS_DIR
+        
+        case "$environment" in
+            dev)
+                SSH_USER="$DEV_SSH_USER"
+                SSH_HOST="$DEV_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$DEV_MIGRATIONS_DIR"
+                ;;
+            prod)
+                SSH_USER="$PROD_SSH_USER"
+                SSH_HOST="$PROD_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$PROD_MIGRATIONS_DIR"
+                ;;
+        esac
+        
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << 'PYEOF'
+import json
+from datetime import datetime, timezone
+
+# Read current .applied.json
+try:
+    with open('.applied.json', 'r') as f:
+        data = json.load(f)
+except:
+    data = {'migrations': []}
+
+# Add new migration
+new_migration = {
+    'file': '${migration_file}',
+    'environment': '${environment}',
+    'applied_at': '${timestamp}'
+}
+
+data['migrations'].append(new_migration)
+
+# Write back
+with open('.applied.json', 'w') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+"
+    else
+        # Локально обновляем локальный файл
+        local temp_file=$(mktemp)
+        
+        jq --arg file "$migration_file" \
+           --arg env "$environment" \
+           --arg ts "$timestamp" \
+           '.migrations += [{
+               "file": $file,
+               "environment": $env,
+               "applied_at": $ts
+           }]' "$APPLIED_LOG" > "$temp_file"
+        
+        mv "$temp_file" "$APPLIED_LOG"
+    fi
 }
 
 # Показать список миграций
