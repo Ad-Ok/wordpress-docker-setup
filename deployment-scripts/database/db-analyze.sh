@@ -85,7 +85,7 @@ run_query() {
         echo "$query" | docker exec -i "${LOCAL_DB_CONTAINER}" mysql -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -N 2>/dev/null
     else
         # Для удаленных серверов
-        ssh "${SSH_USER}@${SSH_HOST}" "mysql -u'${DB_USER}' -p'${DB_PASS}' '${DB_NAME}' -N -e \"${query}\"" 2>/dev/null | grep -v "Using a password"
+        ssh "${SSH_USER}@${SSH_HOST}" "mysql -u'${DB_USER}' -p'${DB_PASS}' '${DB_NAME}' -N -e \"${query}\"" 2>&1 | grep -v "Using a password" || true
     fi
 }
 
