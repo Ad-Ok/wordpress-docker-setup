@@ -182,7 +182,7 @@ echo ""
 # ============================================
 echo -e "${BLUE}[6/10]${NC} Checking database migrations..."
 
-MIGRATIONS_DIR="${LOCAL_PROJECT_ROOT}/wordpress/wp-content/migrations"
+MIGRATIONS_DIR="${LOCAL_PROJECT_ROOT}/wordpress/database/migrations"
 if [ -d "$MIGRATIONS_DIR" ]; then
     MIGRATION_COUNT=$(find "$MIGRATIONS_DIR" -name "*.sql" | wc -l | tr -d ' ')
     echo -e "${GREEN}✓${NC} Found ${MIGRATION_COUNT} migration(s)"
