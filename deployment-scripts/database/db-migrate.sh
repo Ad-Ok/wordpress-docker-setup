@@ -429,34 +429,41 @@ apply_migrations() {
     fi
     
     # Применить миграции
-    local success_count=0
-    local fail_count=0
+    local temp_dir="$(mktemp -d)"
+    local success_file="${temp_dir}/success"
+    local fail_file="${temp_dir}/fail"
+    
+    # Создаём пустые файлы для подсчёта
+    touch "$success_file" "$fail_file"
     
     echo "$pending_migrations" | while read -r migration_file; do
         if [ "$environment" == "local" ]; then
             if apply_migration_local "$migration_file"; then
-                success_count=$((success_count + 1))
+                echo "1" >> "$success_file"
             else
-                fail_count=$((fail_count + 1))
+                echo "1" >> "$fail_file"
                 break
             fi
         else
             if apply_migration_remote "$migration_file" "$environment"; then
-                success_count=$((success_count + 1))
+                echo "1" >> "$success_file"
             else
-                fail_count=$((fail_count + 1))
+                echo "1" >> "$fail_file"
                 break
             fi
         fi
         echo ""
     done
     
+    local success_count=$(wc -l < "$success_file" 2>/dev/null | tr -d ' ')
+    local fail_count=$(wc -l < "$fail_file" 2>/dev/null | tr -d ' ')
+    
     # Итоги
     echo -e "${BLUE}═══════════════════════════════════════${NC}"
     
     local pending_count=$(echo "$pending_migrations" | wc -l | tr -d ' ')
     
-    if [ $fail_count -eq 0 ]; then
+    if [ "${fail_count:-0}" -eq 0 ]; then
         echo -e "${GREEN}✅ Все миграции успешно применены!${NC}"
         echo -e "   Применено: ${pending_count}"
     else
@@ -473,6 +480,9 @@ apply_migrations() {
             echo -e "   3. Восстановите backup: ${CYAN}./rollback.sh${NC}"
         fi
     fi
+    
+    # Очистка временных файлов
+    rm -rf "$temp_dir"
 }
 
 # ============================================
