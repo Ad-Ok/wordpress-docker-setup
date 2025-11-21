@@ -433,6 +433,9 @@ apply_migrations() {
     local success_file="${temp_dir}/success"
     local fail_file="${temp_dir}/fail"
     
+    # Создаём пустые файлы для подсчёта
+    touch "$success_file" "$fail_file"
+    
     echo "$pending_migrations" | while read -r migration_file; do
         if [ "$environment" == "local" ]; then
             if apply_migration_local "$migration_file"; then
@@ -452,15 +455,15 @@ apply_migrations() {
         echo ""
     done
     
-    local success_count=$(wc -l < "$success_file" 2>/dev/null | tr -d ' ' || echo 0)
-    local fail_count=$(wc -l < "$fail_file" 2>/dev/null | tr -d ' ' || echo 0)
+    local success_count=$(wc -l < "$success_file" 2>/dev/null | tr -d ' ')
+    local fail_count=$(wc -l < "$fail_file" 2>/dev/null | tr -d ' ')
     
     # Итоги
     echo -e "${BLUE}═══════════════════════════════════════${NC}"
     
     local pending_count=$(echo "$pending_migrations" | wc -l | tr -d ' ')
     
-    if [ "$fail_count" -eq 0 ]; then
+    if [ "${fail_count:-0}" -eq 0 ]; then
         echo -e "${GREEN}✅ Все миграции успешно применены!${NC}"
         echo -e "   Применено: ${pending_count}"
     else
