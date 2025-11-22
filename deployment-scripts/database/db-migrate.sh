@@ -152,7 +152,7 @@ mark_migration_applied() {
                 ;;
         esac
         
-        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << 'PYEOF'
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << PYEOF
 import json
 from datetime import datetime, timezone
 
@@ -347,10 +347,12 @@ apply_migration_remote() {
     echo -e "${CYAN}→ Применяю миграцию на ${environment}: ${migration_file}${NC}"
     
     # Отправить и применить миграцию
+    local result
     cat "$migration_path" | ssh "${SSH_USER}@${SSH_HOST}" \
         "mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
+    result=${PIPESTATUS[1]}
     
-    if [ ${PIPESTATUS[1]} -eq 0 ]; then
+    if [ $result -eq 0 ]; then
         echo -e "   ${GREEN}✓${NC} Миграция применена на ${environment}"
         mark_migration_applied "$migration_file" "$environment"
         return 0
