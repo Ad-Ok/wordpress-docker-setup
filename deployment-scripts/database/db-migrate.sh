@@ -106,6 +106,9 @@ get_applied_migrations() {
                 ;;
         esac
         
+        # Убедимся, что директория и файл существуют
+        ssh "${SSH_USER}@${SSH_HOST}" "mkdir -p ${REMOTE_MIGRATIONS_DIR} && touch ${REMOTE_MIGRATIONS_DIR}/.applied.json 2>/dev/null || true" >/dev/null 2>&1
+        
         ssh "${SSH_USER}@${SSH_HOST}" "cat ${REMOTE_MIGRATIONS_DIR}/.applied.json 2>/dev/null || echo '{\"migrations\": []}'" | \
             jq -r --arg env "$environment" \
                 '.migrations[] | select(.environment == $env) | .file' 2>/dev/null || true
@@ -152,9 +155,16 @@ mark_migration_applied() {
                 ;;
         esac
         
-        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << PYEOF
+        # Убедимся, что директория миграций существует на сервере
+        ssh "${SSH_USER}@${SSH_HOST}" "mkdir -p ${REMOTE_MIGRATIONS_DIR}"
+        
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << 'PYEOF'
 import json
 from datetime import datetime, timezone
+import os
+
+# Ensure directory exists
+os.makedirs(os.path.dirname('.applied.json') if os.path.dirname('.applied.json') else '.', exist_ok=True)
 
 # Read current .applied.json
 try:
@@ -175,6 +185,8 @@ data['migrations'].append(new_migration)
 # Write back
 with open('.applied.json', 'w') as f:
     json.dump(data, f, indent=2)
+    
+print('Migration marked as applied: ${migration_file}')
 PYEOF
 "
     else
@@ -431,43 +443,44 @@ apply_migrations() {
     fi
     
     # Применить миграции
-    local temp_dir="$(mktemp -d)"
-    local success_file="${temp_dir}/success"
-    local fail_file="${temp_dir}/fail"
+    local success_count=0
+    local fail_count=0
+    local has_error=false
     
-    # Создаём пустые файлы для подсчёта
-    touch "$success_file" "$fail_file"
-    
-    echo "$pending_migrations" | while read -r migration_file; do
+    # Используем process substitution вместо pipe, чтобы не создавать subshell
+    # printf вместо echo для корректной обработки многострочного текста
+    while IFS= read -r migration_file; do
+        # Пропускаем пустые строки
+        [ -z "$migration_file" ] && continue
+        
         if [ "$environment" == "local" ]; then
             if apply_migration_local "$migration_file"; then
-                echo "1" >> "$success_file"
+                ((success_count++))
             else
-                echo "1" >> "$fail_file"
+                ((fail_count++))
+                has_error=true
                 break
             fi
         else
             if apply_migration_remote "$migration_file" "$environment"; then
-                echo "1" >> "$success_file"
+                ((success_count++))
             else
-                echo "1" >> "$fail_file"
+                ((fail_count++))
+                has_error=true
                 break
             fi
         fi
         echo ""
-    done
-    
-    local success_count=$(wc -l < "$success_file" 2>/dev/null | tr -d ' ')
-    local fail_count=$(wc -l < "$fail_file" 2>/dev/null | tr -d ' ')
+    done < <(printf '%s\n' "$pending_migrations")
     
     # Итоги
     echo -e "${BLUE}═══════════════════════════════════════${NC}"
     
     local pending_count=$(echo "$pending_migrations" | wc -l | tr -d ' ')
     
-    if [ "${fail_count:-0}" -eq 0 ]; then
+    if [ "$fail_count" -eq 0 ]; then
         echo -e "${GREEN}✅ Все миграции успешно применены!${NC}"
-        echo -e "   Применено: ${pending_count}"
+        echo -e "   Применено: ${success_count} из ${pending_count}"
     else
         echo -e "${RED}❌ Применение миграций завершилось с ошибками${NC}"
         echo -e "   Успешно: ${success_count}"
@@ -482,9 +495,6 @@ apply_migrations() {
             echo -e "   3. Восстановите backup: ${CYAN}./rollback.sh${NC}"
         fi
     fi
-    
-    # Очистка временных файлов
-    rm -rf "$temp_dir"
 }
 
 # ============================================

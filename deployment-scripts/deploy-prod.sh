@@ -78,7 +78,27 @@ if [ "$DRY_RUN_MODE" != "true" ]; then
     # Увеличиваем версию темы
     version_bump
     
-    if [ $? -ne 0 ]; then
+    if [ $? -eq 0 ]; then
+        # Коммитим и пушим изменения версии
+        WP_GIT_ROOT="${SCRIPT_DIR}/../wordpress"
+        cd "${WP_GIT_ROOT}"
+        
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        
+        echo -e "${BLUE}Committing version bump...${NC}"
+        cd wp-content/themes/maslovka
+        git add style.css
+        git commit -m "chore: bump theme version" || true
+        
+        echo -e "${BLUE}Pushing to ${CURRENT_BRANCH}...${NC}"
+        git push origin "${CURRENT_BRANCH}"
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Version bump pushed${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Failed to push version bump, but continuing...${NC}"
+        fi
+    else
         echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
     fi
 else
