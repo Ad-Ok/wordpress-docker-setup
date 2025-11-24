@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 source "${SCRIPT_DIR}/utils/notifications.sh"
 source "${SCRIPT_DIR}/utils/deployment-helpers.sh"
+source "${SCRIPT_DIR}/utils/version-bump.sh"
 
 # Цвета
 RED='\033[0;31m'
@@ -55,6 +56,21 @@ else
     echo -e "${GREEN}✓${NC} Regular deployment (WordPress already installed)"
     echo ""
 fi
+
+# ============================================
+# STEP 0: Version Bump & Build
+# ============================================
+echo -e "${BLUE}═══ STEP 0/5: Version Bump ═══${NC}"
+echo ""
+
+# Увеличиваем версию темы
+version_bump
+
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
+fi
+
+echo ""
 
 # ============================================
 # STEP 1: Git Status Check
