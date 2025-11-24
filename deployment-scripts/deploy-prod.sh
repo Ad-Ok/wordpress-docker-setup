@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 source "${SCRIPT_DIR}/utils/notifications.sh"
 source "${SCRIPT_DIR}/utils/deployment-helpers.sh"
+source "${SCRIPT_DIR}/utils/version-bump.sh"
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -66,6 +67,25 @@ else
     echo -e "${GREEN}✓${NC} Regular deployment (WordPress already installed)"
     echo ""
 fi
+
+# ============================================
+# STEP 0: Version Bump & Build
+# ============================================
+echo -e "${BLUE}═══ STEP 0/10: Version Bump ═══${NC}"
+echo ""
+
+if [ "$DRY_RUN_MODE" != "true" ]; then
+    # Увеличиваем версию темы
+    version_bump
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
+    fi
+else
+    echo -e "${YELLOW}Skipping version bump in dry-run mode${NC}"
+fi
+
+echo ""
 
 # ============================================
 # STEP 1: Pre-deployment Checklist
