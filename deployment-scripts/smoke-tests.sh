@@ -2,7 +2,7 @@
 # 🧪 Smoke Tests для your-domain.com
 # Проверки после деплоя
 
-set -e
+set -eo pipefail
 
 # Загрузка конфигурации
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,10 +49,10 @@ test_homepage() {
     
     if [ "$HTTP_CODE" == "200" ]; then
         echo -e "${GREEN}✓${NC} Homepage returns HTTP 200"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} Homepage returns HTTP ${HTTP_CODE} (expected 200)"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -68,10 +68,10 @@ test_rest_api() {
     
     if [ "$HTTP_CODE" == "200" ]; then
         echo -e "${GREEN}✓${NC} REST API returns HTTP 200"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} REST API returns HTTP ${HTTP_CODE}"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -88,10 +88,10 @@ test_admin_ajax() {
     
     if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "400" ]; then
         echo -e "${GREEN}✓${NC} admin-ajax.php is accessible"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} admin-ajax.php returns HTTP ${HTTP_CODE}"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -123,11 +123,11 @@ test_css_assets() {
     
     if [ "$HTTP_CODE" == "200" ]; then
         echo -e "${GREEN}✓${NC} CSS assets load successfully"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} CSS returns HTTP ${HTTP_CODE}"
         echo "   URL: ${CSS_URL}"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -159,11 +159,11 @@ test_js_assets() {
     
     if [ "$HTTP_CODE" == "200" ]; then
         echo -e "${GREEN}✓${NC} JS assets load successfully"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} JS returns HTTP ${HTTP_CODE}"
         echo "   URL: ${JS_URL}"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -187,11 +187,11 @@ test_php_errors() {
     
     if [ "$ERROR_COUNT" -eq 0 ]; then
         echo -e "${GREEN}✓${NC} No PHP errors in recent logs"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} Found ${ERROR_COUNT} error(s) in logs"
         echo -e "${YELLOW}   Check: ssh ${SSH_USER}@${SSH_HOST} 'tail -50 /home/${SSH_USER}/logs/error.log'${NC}"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -210,13 +210,13 @@ test_response_time() {
     
     if [ "$RESPONSE_MS" -lt 2000 ]; then
         echo -e "${GREEN}✓${NC} Response time: ${RESPONSE_MS}ms (good)"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     elif [ "$RESPONSE_MS" -lt 5000 ]; then
         echo -e "${YELLOW}⚠️  Response time: ${RESPONSE_MS}ms (slow)${NC}"
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
         echo -e "${RED}✗${NC} Response time: ${RESPONSE_MS}ms (too slow)"
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
@@ -247,9 +247,9 @@ test_critical_pages() {
     done
     
     if [ $LOCAL_FAILED -eq 0 ]; then
-        ((PASSED_TESTS++))
+        PASSED_TESTS=$((PASSED_TESTS + 1))
     else
-        ((FAILED_TESTS++))
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
 }
 
