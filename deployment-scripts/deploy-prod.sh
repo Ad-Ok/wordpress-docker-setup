@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 source "${SCRIPT_DIR}/utils/notifications.sh"
 source "${SCRIPT_DIR}/utils/deployment-helpers.sh"
+source "${SCRIPT_DIR}/utils/version-bump.sh"
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -66,6 +67,45 @@ else
     echo -e "${GREEN}✓${NC} Regular deployment (WordPress already installed)"
     echo ""
 fi
+
+# ============================================
+# STEP 0: Version Bump & Build
+# ============================================
+echo -e "${BLUE}═══ STEP 0/10: Version Bump ═══${NC}"
+echo ""
+
+if [ "$DRY_RUN_MODE" != "true" ]; then
+    # Увеличиваем версию темы
+    version_bump
+    
+    if [ $? -eq 0 ]; then
+        # Коммитим и пушим изменения версии
+        WP_GIT_ROOT="${SCRIPT_DIR}/../wordpress"
+        cd "${WP_GIT_ROOT}"
+        
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        
+        echo -e "${BLUE}Committing version bump...${NC}"
+        cd wp-content/themes/maslovka
+        git add style.css
+        git commit -m "chore: bump theme version" || true
+        
+        echo -e "${BLUE}Pushing to ${CURRENT_BRANCH}...${NC}"
+        git push origin "${CURRENT_BRANCH}"
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Version bump pushed${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Failed to push version bump, but continuing...${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
+    fi
+else
+    echo -e "${YELLOW}Skipping version bump in dry-run mode${NC}"
+fi
+
+echo ""
 
 # ============================================
 # STEP 1: Pre-deployment Checklist
@@ -239,39 +279,9 @@ echo -e "${BLUE}═══ STEP 7/10: Running Database Migrations ═══${NC}"
 echo ""
 
 if [ "$AUTO_RUN_MIGRATIONS" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
-    ssh "${PROD_SSH_USER}@${PROD_SSH_HOST}" << ENDSSH
-cd ${PROD_WP_PATH}
-
-if [ -f "wp-content/migrations/migration_runner.php" ]; then
-    echo "Checking migrations status..."
-    wp your-project migrate:status
+    "${SCRIPT_DIR}/database/db-migrate.sh" apply prod
     
-    echo ""
-    echo "Running migrations..."
-    wp your-project migrate
-    
-    if [ \$? -eq 0 ]; then
-        echo "✓ Migrations completed"
-    else
-        echo "✗ Migrations failed"
-        exit 1
-    fi
-else
-    echo "ℹ️  No migrations found"
-fi
-ENDSSH
-    
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}✗ Migrations failed${NC}"
-        
-        # Отключить maintenance mode
-        ssh "${PROD_SSH_USER}@${PROD_SSH_HOST}" "rm -f ${PROD_WEBROOT}/.maintenance"
-        
-        send_notification "❌ PROD deployment failed: Migration error"
-        exit 1
-    fi
-    
-    echo -e "${GREEN}✓${NC} Migrations completed"
+    echo -e "${GREEN}✓${NC} Migrations checked"
 else
     echo -e "${YELLOW}ℹ️  Skipping migrations${NC}"
 fi
@@ -288,22 +298,24 @@ if [ "$AUTO_CLEAR_CACHE" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
     ssh "${PROD_SSH_USER}@${PROD_SSH_HOST}" << ENDSSH
 cd ${PROD_WP_PATH}
 
-echo "Flushing WordPress cache..."
-wp cache flush
-
-echo "Flushing rewrite rules..."
-wp rewrite flush
-
-# Если есть плагин кеширования
-if wp plugin is-active wp-super-cache 2>/dev/null; then
-    echo "Flushing WP Super Cache..."
-    wp super-cache flush
+# Очистка WP Super Cache (если установлен)
+if [ -d "wp-content/cache" ]; then
+    echo "Clearing WP Super Cache..."
+    rm -rf wp-content/cache/*
+    echo "✓ Cache directory cleared"
 fi
 
-if wp plugin is-active w3-total-cache 2>/dev/null; then
-    echo "Flushing W3 Total Cache..."
-    wp w3-total-cache flush
-fi
+# Очистка кеша через PHP скрипт (для функций WordPress)
+php -r "
+define('WP_USE_THEMES', false);
+require_once('wp-load.php');
+if (function_exists('wp_cache_flush')) {
+    wp_cache_flush();
+    echo 'WordPress cache flushed\n';
+}
+"
+
+echo "✓ Cache cleared"
 ENDSSH
     
     echo -e "${GREEN}✓${NC} Cache cleared"

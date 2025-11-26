@@ -89,9 +89,35 @@ get_applied_migrations() {
     local environment="$1"
     init_applied_log
     
-    jq -r --arg env "$environment" \
-        '.migrations[] | select(.environment == $env) | .file' \
-        "$APPLIED_LOG" 2>/dev/null || true
+    # Для удаленных окружений читаем файл с сервера
+    if [ "$environment" == "dev" ] || [ "$environment" == "prod" ]; then
+        local SSH_USER SSH_HOST REMOTE_MIGRATIONS_DIR
+        
+        case "$environment" in
+            dev)
+                SSH_USER="$DEV_SSH_USER"
+                SSH_HOST="$DEV_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$DEV_MIGRATIONS_DIR"
+                ;;
+            prod)
+                SSH_USER="$PROD_SSH_USER"
+                SSH_HOST="$PROD_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$PROD_MIGRATIONS_DIR"
+                ;;
+        esac
+        
+        # Убедимся, что директория и файл существуют
+        ssh "${SSH_USER}@${SSH_HOST}" "mkdir -p ${REMOTE_MIGRATIONS_DIR} && touch ${REMOTE_MIGRATIONS_DIR}/.applied.json 2>/dev/null || true" >/dev/null 2>&1
+        
+        ssh "${SSH_USER}@${SSH_HOST}" "cat ${REMOTE_MIGRATIONS_DIR}/.applied.json 2>/dev/null || echo '{\"migrations\": []}'" | \
+            jq -r --arg env "$environment" \
+                '.migrations[] | select(.environment == $env) | .file' 2>/dev/null || true
+    else
+        # Локально читаем локальный файл
+        jq -r --arg env "$environment" \
+            '.migrations[] | select(.environment == $env) | .file' \
+            "$APPLIED_LOG" 2>/dev/null || true
+    fi
 }
 
 # Проверить, применена ли миграция
@@ -111,18 +137,73 @@ mark_migration_applied() {
     init_applied_log
     
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    local temp_file=$(mktemp)
     
-    jq --arg file "$migration_file" \
-       --arg env "$environment" \
-       --arg ts "$timestamp" \
-       '.migrations += [{
-           "file": $file,
-           "environment": $env,
-           "applied_at": $ts
-       }]' "$APPLIED_LOG" > "$temp_file"
+    # Для удаленных окружений обновляем файл на сервере
+    if [ "$environment" == "dev" ] || [ "$environment" == "prod" ]; then
+        local SSH_USER SSH_HOST REMOTE_MIGRATIONS_DIR
+        
+        case "$environment" in
+            dev)
+                SSH_USER="$DEV_SSH_USER"
+                SSH_HOST="$DEV_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$DEV_MIGRATIONS_DIR"
+                ;;
+            prod)
+                SSH_USER="$PROD_SSH_USER"
+                SSH_HOST="$PROD_SSH_HOST"
+                REMOTE_MIGRATIONS_DIR="$PROD_MIGRATIONS_DIR"
+                ;;
+        esac
+        
+        # Убедимся, что директория миграций существует на сервере
+        ssh "${SSH_USER}@${SSH_HOST}" "mkdir -p ${REMOTE_MIGRATIONS_DIR}"
+        
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_MIGRATIONS_DIR} && python3 << 'PYEOF'
+import json
+from datetime import datetime, timezone
+import os
+
+# Ensure directory exists
+os.makedirs(os.path.dirname('.applied.json') if os.path.dirname('.applied.json') else '.', exist_ok=True)
+
+# Read current .applied.json
+try:
+    with open('.applied.json', 'r') as f:
+        data = json.load(f)
+except:
+    data = {'migrations': []}
+
+# Add new migration
+new_migration = {
+    'file': '${migration_file}',
+    'environment': '${environment}',
+    'applied_at': '${timestamp}'
+}
+
+data['migrations'].append(new_migration)
+
+# Write back
+with open('.applied.json', 'w') as f:
+    json.dump(data, f, indent=2)
     
-    mv "$temp_file" "$APPLIED_LOG"
+print('Migration marked as applied: ${migration_file}')
+PYEOF
+"
+    else
+        # Локально обновляем локальный файл
+        local temp_file=$(mktemp)
+        
+        jq --arg file "$migration_file" \
+           --arg env "$environment" \
+           --arg ts "$timestamp" \
+           '.migrations += [{
+               "file": $file,
+               "environment": $env,
+               "applied_at": $ts
+           }]' "$APPLIED_LOG" > "$temp_file"
+        
+        mv "$temp_file" "$APPLIED_LOG"
+    fi
 }
 
 # Показать список миграций
@@ -278,10 +359,12 @@ apply_migration_remote() {
     echo -e "${CYAN}→ Применяю миграцию на ${environment}: ${migration_file}${NC}"
     
     # Отправить и применить миграцию
+    local result
     cat "$migration_path" | ssh "${SSH_USER}@${SSH_HOST}" \
         "mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
+    result=${PIPESTATUS[1]}
     
-    if [ ${PIPESTATUS[1]} -eq 0 ]; then
+    if [ $result -eq 0 ]; then
         echo -e "   ${GREEN}✓${NC} Миграция применена на ${environment}"
         mark_migration_applied "$migration_file" "$environment"
         return 0
@@ -362,34 +445,42 @@ apply_migrations() {
     # Применить миграции
     local success_count=0
     local fail_count=0
+    local has_error=false
     
-    echo "$pending_migrations" | while read -r migration_file; do
+    # Используем process substitution вместо pipe, чтобы не создавать subshell
+    # printf вместо echo для корректной обработки многострочного текста
+    while IFS= read -r migration_file; do
+        # Пропускаем пустые строки
+        [ -z "$migration_file" ] && continue
+        
         if [ "$environment" == "local" ]; then
             if apply_migration_local "$migration_file"; then
-                success_count=$((success_count + 1))
+                ((success_count++))
             else
-                fail_count=$((fail_count + 1))
+                ((fail_count++))
+                has_error=true
                 break
             fi
         else
             if apply_migration_remote "$migration_file" "$environment"; then
-                success_count=$((success_count + 1))
+                ((success_count++))
             else
-                fail_count=$((fail_count + 1))
+                ((fail_count++))
+                has_error=true
                 break
             fi
         fi
         echo ""
-    done
+    done < <(printf '%s\n' "$pending_migrations")
     
     # Итоги
     echo -e "${BLUE}═══════════════════════════════════════${NC}"
     
     local pending_count=$(echo "$pending_migrations" | wc -l | tr -d ' ')
     
-    if [ $fail_count -eq 0 ]; then
+    if [ "$fail_count" -eq 0 ]; then
         echo -e "${GREEN}✅ Все миграции успешно применены!${NC}"
-        echo -e "   Применено: ${pending_count}"
+        echo -e "   Применено: ${success_count} из ${pending_count}"
     else
         echo -e "${RED}❌ Применение миграций завершилось с ошибками${NC}"
         echo -e "   Успешно: ${success_count}"

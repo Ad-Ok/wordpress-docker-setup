@@ -66,3 +66,9 @@ wp-content/cache/
 # WordPress core files (temporary - will be restructured)
 # wordpress/
 .applied.json
+wordpress/database/migrations/.applied.json
+
+# SSL certificates (local only)
+nginx/ssl/*.key
+nginx/ssl/*.crt
+nginx/ssl/*.pem
