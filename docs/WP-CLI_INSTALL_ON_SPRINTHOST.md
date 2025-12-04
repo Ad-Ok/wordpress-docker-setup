@@ -35,25 +35,38 @@ chmod +x wp-cli.phar
 mv wp-cli.phar ~/wp-cli.phar
 ```
 
-### Добавьте алиас для удобства
+### Создайте wrapper-скрипт (рекомендуемый способ)
 
-**ВАЖНО**: На Sprinthost алиасы нужно добавлять в `~/.bash_profile`, а не в `~/.bashrc`
+**ВАЖНО**: На Sprinthost алиасы не работают в SSH-сессиях. Лучший способ - создать исполняемый скрипт в `~/bin`:
+
+```bash
+# Создайте директорию bin
+mkdir -p ~/bin
+
+# Создайте wrapper-скрипт для wp
+cat > ~/bin/wp << 'EOF'
+#!/bin/bash
+/usr/local/bin/php /home/ваш_логин/wp-cli.phar "$@"
+EOF
+
+# Сделайте скрипт исполняемым
+chmod +x ~/bin/wp
+
+# Добавьте ~/bin в PATH
+echo 'export PATH=$HOME/bin:$PATH' >> ~/.bash_profile
+source ~/.bash_profile
+```
+
+*Замените `ваш_логин` на ваш реальный логин от Sprinthost*
+
+### Альтернативный способ - через алиас (может не работать в SSH):
 
 ```bash
 echo 'alias wp="/usr/local/bin/php ~/wp-cli.phar"' >> ~/.bash_profile
 source ~/.bash_profile
 ```
 
-### Альтернативный способ (если PHP в другом месте):
-
-```bash
-# Найдите путь к PHP
-which php
-
-# Добавьте алиас с полным путем
-echo 'alias wp="/usr/local/bin/php ~/wp-cli.phar"' >> ~/.bash_profile
-source ~/.bash_profile
-```
+**Примечание**: Алиас может не работать при удаленном выполнении команд через SSH. Используйте способ со скриптом выше для надежной работы.
 
 ---
 
@@ -70,17 +83,24 @@ cd domains/ваш_домен/public_html
 ### Проверьте работу WP-CLI
 
 ```bash
-# Используйте полный путь (самый надежный способ)
+# Проверьте версию WP-CLI
+wp --version
+
+# Или используйте полный путь (если скрипт не работает)
 /usr/local/bin/php ~/wp-cli.phar --version
 
-# Или перейдите в директорию WordPress и используйте полный путь
+# Проверьте в директории WordPress
 cd domains/ваш_домен/public_html
-/usr/local/bin/php ~/wp-cli.phar core version
-/usr/local/bin/php ~/wp-cli.phar plugin list
-/usr/local/bin/php ~/wp-cli.phar db check
+wp core version
+wp plugin list
+wp db check
 ```
 
-**Примечание**: На Sprinthost SSH сессии не всегда загружают `.bash_profile`, поэтому рекомендуется использовать полный путь к WP-CLI.
+**Примечание**: Если команда `wp` не работает сразу, переподключитесь к SSH или используйте:
+```bash
+export PATH=$HOME/bin:$PATH
+wp --version
+```
 
 ---
 
@@ -97,19 +117,19 @@ cd domains/ваш_домен/public_html
 ### Шаг 2: Скачайте WordPress
 
 ```bash
-/usr/local/bin/php ~/wp-cli.phar core download --locale=ru_RU
+wp core download --locale=ru_RU
 ```
 
 ### Шаг 3: Создайте конфигурационный файл
 
 ```bash
-/usr/local/bin/php ~/wp-cli.phar config create --dbname=имя_базы --dbuser=пользователь_базы --dbpass=пароль_базы --dbhost=localhost
+wp config create --dbname=имя_базы --dbuser=пользователь_базы --dbpass=пароль_базы --dbhost=localhost
 ```
 
 ### Шаг 4: Установите WordPress
 
 ```bash
-/usr/local/bin/php ~/wp-cli.phar core install --url=ваш_домен --title="Название сайта" --admin_user=admin --admin_password=пароль --admin_email=email@example.com
+wp core install --url=ваш_домен --title="Название сайта" --admin_user=admin --admin_password=пароль --admin_email=email@example.com
 ```
 
 ---
@@ -148,21 +168,42 @@ wp super-cache flush
 ### Если команда `wp` не найдена:
 
 ```bash
-# Проверьте алиас
-cat ~/.bashrc | grep wp
+# Проверьте, что скрипт существует и исполняемый
+ls -la ~/bin/wp
+
+# Проверьте PATH
+echo $PATH | grep bin
+
+# Добавьте ~/bin в PATH вручную
+export PATH=$HOME/bin:$PATH
 
 # Или используйте полный путь
-php /home/ваш_логин/wp-cli.phar --version
+~/bin/wp --version
+/usr/local/bin/php ~/wp-cli.phar --version
 ```
 
 ### Если проблемы с правами:
 
 ```bash
 # Проверьте права на wp-cli.phar
-ls -la /home/ваш_логин/wp-cli.phar
+ls -la ~/wp-cli.phar
+
+# Проверьте права на скрипт
+ls -la ~/bin/wp
 
 # Исправьте права если нужно
-chmod 755 /home/ваш_логин/wp-cli.phar
+chmod 755 ~/wp-cli.phar
+chmod +x ~/bin/wp
+```
+
+### Для использования в скриптах и удаленных SSH командах:
+
+```bash
+# Всегда экспортируйте PATH в начале команды
+ssh user@host "export PATH=\$HOME/bin:\$PATH && wp plugin list"
+
+# Или используйте login shell
+ssh -t user@host "bash -lc 'wp plugin list'"
 ```
 
 ---
