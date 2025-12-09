@@ -52,6 +52,7 @@ Settings:
 ✅ Media: Enable translation
 ✅ The front page URL contains the language code instead of the page name or page id
    (чтобы EN главная была /en/, а не /en/slug-of-english-homepage/)
+✅ There are posts, pages, categories or tags without language. You can set them all to the default language. - нажать!
 ```
 
 **1.3. Включить CPT и таксономии**
@@ -127,6 +128,7 @@ curl -I https://localhost/en/ 2>&1 | grep HTTP
 1. Settings → Languages
    ✅ 2 языка в списке: Русский (default), English
    ✅ URL modification: Hide for default = ON
+   ✅ Проверить, что нет сообщений вида There are posts, pages, categories or tags without language
 
 2. Settings → Languages → Settings
    ✅ CPT: collections, vistavki, events, artists, photo

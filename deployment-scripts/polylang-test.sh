@@ -457,6 +457,28 @@ phase_1_tests() {
     else
         test_fail "HTML lang некорректен (RU: $HTML_LANG_RU, EN: $HTML_LANG_EN)"
     fi
+    
+    # 1.10 Проверка что все посты имеют язык (нет постов без языка)
+    test_num=$((test_num + 1))
+    echo -e "${BLUE}[1.$test_num]${NC} Все опубликованные посты имеют язык..."
+    
+    # Считаем посты без языка (исключаем служебные типы)
+    POSTS_WITHOUT_LANG=$(run_sql "
+        SELECT COUNT(*) FROM wp_posts p
+        WHERE p.post_status = 'publish'
+        AND p.post_type IN ('post', 'page', 'artist', 'collection', 'events', 'vistavki', 'photo')
+        AND p.ID NOT IN (
+            SELECT tr.object_id FROM wp_term_relationships tr
+            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+            WHERE tt.taxonomy = 'language'
+        )
+    " 2>/dev/null | tr -d '[:space:]')
+    
+    if [ "$POSTS_WITHOUT_LANG" == "0" ] 2>/dev/null; then
+        test_pass "Все посты имеют язык"
+    else
+        test_fail "Найдено $POSTS_WITHOUT_LANG постов без языка! Нажмите ссылку в админке: 'Set language to all posts without language'"
+    fi
 }
 
 # ============================================
