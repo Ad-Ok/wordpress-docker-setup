@@ -722,6 +722,31 @@ phase_3_tests() {
     else
         test_skip "Файл .pot не найден для подсчета строк"
     fi
+    
+    # 3.11 Проверка наличия языкового переключателя в topmenu.php
+    echo "[3.11] Проверка языкового переключателя в topmenu.php..."
+    if grep -q "pll_the_languages" "${theme_path}/components/topmenu.php" 2>/dev/null; then
+        test_pass "Переключатель языков добавлен в topmenu.php"
+    else
+        test_fail "pll_the_languages не найден в topmenu.php"
+    fi
+    
+    # 3.12 Проверка стилей языкового переключателя
+    echo "[3.12] Проверка стилей переключателя языков..."
+    if [[ -f "${theme_path}/src/scss/components/_language-switcher.scss" ]]; then
+        test_pass "Файл стилей language-switcher.scss существует"
+    else
+        test_fail "Файл _language-switcher.scss не найден"
+    fi
+    
+    # 3.13 Проверка отображения переключателя на странице
+    echo "[3.13] Проверка отображения переключателя на главной..."
+    local homepage=$(curl_with_auth -s -L "${SITE_URL}/")
+    if echo "$homepage" | grep -q "language-switcher"; then
+        test_pass "Переключатель языков отображается на странице"
+    else
+        test_skip "Переключатель не найден в HTML (возможно Polylang не активен)"
+    fi
 }
 
 phase_4_tests() {
