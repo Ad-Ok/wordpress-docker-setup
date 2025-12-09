@@ -244,87 +244,89 @@ curl -I https://localhost/en/ | grep HTTP
 
 ---
 
-### Фаза 3: Переводы темы - 3-4 часа
+### Фаза 3: Переводы темы - 2-3 часа
 
-**3.1. Обернуть строки в `pll__()`**
+> **Подход**: Используем стандартную систему переводов WordPress (`.po/.mo` файлы) вместо Polylang String Translations. Это позволяет хранить переводы в git и не требует SQL миграций.
+
+**3.1. Структура файлов переводов**
+
+```
+wp-content/themes/maslovka/languages/
+├── maslovka.pot     # Шаблон переводов (ключи = русские фразы)
+├── en_US.po         # Английские переводы (исходник)
+└── en_US.mo         # Скомпилированный бинарный файл
+```
+
+**3.2. Обернуть строки в функции перевода**
 
 ```php
 // ❌ ДО:
 echo 'Подробнее';
 
-// ✅ ПОСЛЕ:
-echo pll__('Подробнее');
+// ✅ ПОСЛЕ (русская строка как ключ):
+echo __('Подробнее', 'maslovka');
+// или для вывода:
+esc_html_e('Подробнее', 'maslovka');
 ```
 
 **Файлы для обновления:**
 ```
 wp-content/themes/maslovka/
-├── header.php
-├── footer.php  
-├── single.php
-├── archive.php
-├── template-parts/
-│   ├── content-collection.php
-│   ├── content-exhibition.php
-│   └── ...
-└── functions.php (регистрация строк)
+├── 404.php, 500.php, 503.php   # Страницы ошибок
+├── footer.php                   # Куки-баннер
+├── single.php                   # Страница художника
+├── single-collection.php        # Страница произведения
+├── page-artists.php             # Архив художников
+├── components/
+│   ├── topmenu.php             # Мобильное меню
+│   ├── home-events.php         # Блок событий
+│   └── home-vistavki.php       # Блок выставок
+└── inc/components/
+    ├── events-grid.php         # Сетка событий
+    └── exhibitions-grid.php    # Сетка выставок
 ```
 
-**3.2. Регистрация строк**
+**3.3. Загрузка переводов**
 
-В `functions.php`:
+В `inc/theme/theme-setup.php`:
 ```php
-function maslovka_register_polylang_strings() {
-    if (function_exists('pll_register_string')) {
-        // Навигация
-        pll_register_string('Подробнее', 'Подробнее', 'maslovka');
-        pll_register_string('Назад', 'Назад', 'maslovka');
-        pll_register_string('Далее', 'Далее', 'maslovka');
-        
-        // Кнопки
-        pll_register_string('Смотреть все', 'Смотреть все', 'maslovka');
-        pll_register_string('Загрузить ещё', 'Загрузить ещё', 'maslovka');
-        
-        // Разделы
-        pll_register_string('Коллекции', 'Коллекции', 'maslovka');
-        pll_register_string('Художники', 'Художники', 'maslovka');
-        pll_register_string('Выставки', 'Выставки', 'maslovka');
-        pll_register_string('События', 'События', 'maslovka');
-        
-        // Формы
-        pll_register_string('Имя', 'Имя', 'maslovka');
-        pll_register_string('Email', 'Email', 'maslovka');
-        pll_register_string('Сообщение', 'Сообщение', 'maslovka');
-        pll_register_string('Отправить', 'Отправить', 'maslovka');
-    }
+function maslovka_theme_setup() {
+    // Загрузка переводов темы
+    load_theme_textdomain('maslovka', get_template_directory() . '/languages');
+    // ... остальные настройки
 }
-add_action('init', 'maslovka_register_polylang_strings');
 ```
 
-**3.3. Перевести строки в админке**
+**3.4. Билд переводов**
 
+В `package.json` добавлен скрипт:
+```json
+{
+  "scripts": {
+    "build:i18n": "msgfmt languages/en_US.po -o languages/en_US.mo",
+    "build": "webpack --mode production && npm run build:i18n"
+  }
+}
 ```
-Settings → Languages → String translations
 
-Для каждой строки:
-"Подробнее" → "Read more"
-"Назад" → "Back"
-"Далее" → "Next"
-...
-```
-
-**3.4. Создать миграцию 2**
-
+Требуется установленный `gettext`:
 ```bash
-# После перевода всех строк на LOCAL:
-mysqldump -u root -p wordpress_db \
-  --no-create-info \
-  --where="option_name LIKE 'polylang_mo%'" \
-  wp_options \
-  > 002-polylang-string-translations.sql
+# macOS
+brew install gettext
+
+# Ubuntu/Debian
+sudo apt-get install gettext
 ```
 
-**3.5. Языковой переключатель**
+**3.5. Процесс добавления новых переводов**
+
+1. Добавить строку в PHP с `__('Текст', 'maslovka')`
+2. Добавить в `languages/maslovka.pot` (msgid)
+3. Добавить перевод в `languages/en_US.po` (msgstr)
+4. Запустить `npm run build:i18n`
+5. Закоммитить все 3 файла (.pot, .po, .mo)
+
+**3.6. Языковой переключатель**
 
 Добавить ACF поле в настройки страниц:
 
