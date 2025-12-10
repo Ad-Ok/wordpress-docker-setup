@@ -6,10 +6,13 @@
 #   ./polylang-test.sh --env=local --phase=1
 #   ./polylang-test.sh --env=dev --phase=3 --force-sql
 #   ./polylang-test.sh --env=prod --phase=8
+#   ./polylang-test.sh --env=local --only=4        # только фаза 4
+#   ./polylang-test.sh --env=local --only=2,3,4    # только фазы 2, 3, 4
 #
 # Параметры:
 #   --env=local|dev|prod    Окружение для тестирования (обязательный)
 #   --phase=1-9             До какой фазы включительно тестировать (по умолчанию: 1)
+#   --only=N или N,M,K      Запустить только указанные фазы
 #   --force-sql             Пропустить WP-CLI и использовать только SQL
 #   --help                  Показать справку
 
@@ -21,20 +24,26 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-NC='\033[0m' # No Color
+# Загрузка модулей тестов
+TESTS_DIR="${SCRIPT_DIR}/polylang-tests"
+source "${TESTS_DIR}/common.sh"
+source "${TESTS_DIR}/phase-0.sh"
+source "${TESTS_DIR}/phase-1.sh"
+source "${TESTS_DIR}/phase-2.sh"
+source "${TESTS_DIR}/phase-3.sh"
+source "${TESTS_DIR}/phase-4.sh"
+source "${TESTS_DIR}/phase-5.sh"
+source "${TESTS_DIR}/phase-6.sh"
+source "${TESTS_DIR}/phase-7.sh"
+source "${TESTS_DIR}/phase-8.sh"
+source "${TESTS_DIR}/phase-9.sh"
 
 # ============================================
 # Переменные
 # ============================================
 ENVIRONMENT=""
 PHASE=1
+ONLY_PHASES=""
 FORCE_SQL=false
 PASSED_TESTS=0
 FAILED_TESTS=0
@@ -51,20 +60,24 @@ show_help() {
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Использование:"
-    echo "  ./polylang-test.sh --env=<environment> [--phase=<n>] [--force-sql]"
+    echo "  ./polylang-test.sh --env=<environment> [--phase=<n>] [--only=<phases>] [--force-sql]"
     echo ""
     echo "Параметры:"
     echo "  --env=local|dev|prod    Окружение для тестирования (обязательный)"
     echo "  --phase=1-9             До какой фазы включительно тестировать (по умолчанию: 1)"
+    echo "  --only=N или N,M,K      Запустить только указанные фазы (например: --only=4 или --only=2,3,4)"
     echo "  --force-sql             Пропустить WP-CLI и использовать только SQL"
     echo "  --help                  Показать эту справку"
     echo ""
     echo "Примеры:"
-    echo "  ./polylang-test.sh --env=local --phase=1"
-    echo "  ./polylang-test.sh --env=dev --phase=3 --force-sql"
-    echo "  ./polylang-test.sh --env=prod --phase=8"
+    echo "  ./polylang-test.sh --env=local --phase=1          # Фазы 0-1"
+    echo "  ./polylang-test.sh --env=dev --phase=3 --force-sql # Фазы 0-3, только SQL"
+    echo "  ./polylang-test.sh --env=local --only=4           # Только фаза 4"
+    echo "  ./polylang-test.sh --env=local --only=1,2,4       # Только фазы 1, 2, 4"
+    echo "  ./polylang-test.sh --env=prod --phase=8           # Фазы 0-8"
     echo ""
     echo "Фазы:"
+    echo "  0 - Предварительные проверки (выполняется всегда)"
     echo "  1 - Установка и настройка Polylang"
     echo "  2 - SQL миграции (EN меню)"
     echo "  3 - Переводы темы"
@@ -84,6 +97,9 @@ for arg in "$@"; do
             ;;
         --phase=*)
             PHASE="${arg#*=}"
+            ;;
+        --only=*)
+            ONLY_PHASES="${arg#*=}"
             ;;
         --force-sql)
             FORCE_SQL=true
@@ -112,9 +128,22 @@ if [[ ! "$ENVIRONMENT" =~ ^(local|dev|prod)$ ]]; then
     exit 1
 fi
 
-if [[ ! "$PHASE" =~ ^[1-9]$ ]]; then
-    echo -e "${RED}Ошибка: фаза должна быть от 1 до 9${NC}"
-    exit 1
+# Валидация --phase (если не используется --only)
+if [ -z "$ONLY_PHASES" ]; then
+    if [[ ! "$PHASE" =~ ^[1-9]$ ]]; then
+        echo -e "${RED}Ошибка: фаза должна быть от 1 до 9${NC}"
+        exit 1
+    fi
+fi
+
+# Валидация --only
+if [ -n "$ONLY_PHASES" ]; then
+    # Проверка формата: одиночная цифра или цифры через запятую
+    if [[ ! "$ONLY_PHASES" =~ ^[0-9](,[0-9])*$ ]]; then
+        echo -e "${RED}Ошибка: --only должен содержать номера фаз (0-9), разделённые запятыми${NC}"
+        echo "Примеры: --only=4 или --only=1,2,4"
+        exit 1
+    fi
 fi
 
 # ============================================
@@ -161,644 +190,27 @@ setup_environment() {
 }
 
 # ============================================
-# Утилиты
+# Проверка нужно ли запускать фазу
 # ============================================
-
-# Функция для curl с auth (для LOCAL и DEV) и -k для самоподписанных сертификатов
-curl_with_auth() {
-    local extra_opts=""
-    
-    # Basic Auth для LOCAL и DEV
-    if [ "$ENVIRONMENT" == "dev" ] || [ "$ENVIRONMENT" == "local" ]; then
-        extra_opts="-u test:test"
-    fi
-    
-    # Игнорировать SSL ошибки для LOCAL (самоподписанный сертификат)
-    if [ "$ENVIRONMENT" == "local" ]; then
-        extra_opts="$extra_opts -k"
-    fi
-    
-    curl $extra_opts "$@"
-}
-
-# Выполнение SQL запроса
-run_sql() {
-    local query="$1"
-    
-    if [ "$IS_LOCAL" = true ]; then
-        # Для LOCAL - через docker
-        docker compose -f "${LOCAL_PROJECT_ROOT}/docker-compose.yml" exec -T mysql \
-            mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" -N -e "$query" 2>/dev/null
-    else
-        # Для DEV/PROD - через SSH
-        ssh -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
-            "mysql -u'$DB_USER' -p'$DB_PASS' '$DB_NAME' -N -e \"$query\"" 2>/dev/null
-    fi
-}
-
-# Выполнение WP-CLI команды
-run_wp_cli() {
-    local cmd="$1"
-    
-    if [ "$IS_LOCAL" = true ]; then
-        # Для LOCAL - через docker
-        docker compose -f "${LOCAL_PROJECT_ROOT}/docker-compose.yml" exec -T php \
-            wp $cmd --allow-root 2>/dev/null
-    else
-        # Для DEV/PROD - через SSH
-        ssh -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
-            "cd '$WP_PATH' && wp $cmd" 2>/dev/null
-    fi
-}
-
-# Вывод результата теста
-test_pass() {
-    local msg="$1"
-    echo -e "${GREEN}✓${NC} $msg"
-    PASSED_TESTS=$((PASSED_TESTS + 1))
-}
-
-test_fail() {
-    local msg="$1"
-    echo -e "${RED}✗${NC} $msg"
-    FAILED_TESTS=$((FAILED_TESTS + 1))
-}
-
-test_skip() {
-    local msg="$1"
-    echo -e "${YELLOW}○${NC} $msg (пропущен)"
-    SKIPPED_TESTS=$((SKIPPED_TESTS + 1))
-}
-
-test_info() {
-    local msg="$1"
-    echo -e "${BLUE}ℹ${NC} $msg"
-}
-
-phase_header() {
+should_run_phase() {
     local phase_num="$1"
-    local phase_name="$2"
-    echo ""
-    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${MAGENTA}  ФАЗА $phase_num: $phase_name${NC}"
-    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
-    echo ""
-}
-
-# ============================================
-# ФАЗА 0: Предварительные проверки
-# ============================================
-phase_0_checks() {
-    phase_header "0" "Предварительные проверки"
     
-    # 0.1 Проверка SSH соединения (для dev/prod)
-    if [ "$IS_LOCAL" = false ]; then
-        echo -e "${BLUE}[0.1]${NC} Проверка SSH соединения..."
-        
-        if ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" "echo 'ok'" > /dev/null 2>&1; then
-            test_pass "SSH соединение с ${SSH_HOST} работает"
-            SSH_AVAILABLE=true
+    # Если используется --only, проверяем список
+    if [ -n "$ONLY_PHASES" ]; then
+        # Проверяем есть ли номер фазы в списке
+        if echo "$ONLY_PHASES" | grep -qE "(^|,)${phase_num}(,|$)"; then
+            return 0  # true - запустить
         else
-            test_fail "SSH соединение с ${SSH_HOST} не работает"
-            echo -e "${RED}   Запустите: ./test-ssh-connection.sh для диагностики${NC}"
-            return 1
-        fi
-    else
-        echo -e "${BLUE}[0.1]${NC} Проверка Docker контейнеров..."
-        
-        if docker compose -f "${LOCAL_PROJECT_ROOT}/docker-compose.yml" ps --format "{{.Name}}" | grep -q "wordpress_php"; then
-            test_pass "Docker контейнеры запущены"
-        else
-            test_fail "Docker контейнеры не запущены"
-            echo -e "${RED}   Запустите: cd www && docker compose up -d${NC}"
-            return 1
+            return 1  # false - пропустить
         fi
     fi
     
-    # 0.2 Проверка WP-CLI
-    if [ "$FORCE_SQL" = false ]; then
-        echo -e "${BLUE}[0.2]${NC} Проверка доступности WP-CLI..."
-        
-        if run_wp_cli "--version" > /dev/null 2>&1; then
-            test_pass "WP-CLI доступен"
-            WP_CLI_AVAILABLE=true
-        else
-            test_info "WP-CLI недоступен, будет использоваться SQL"
-            WP_CLI_AVAILABLE=false
-        fi
+    # Иначе используем --phase для диапазона 1..N
+    if [ "$phase_num" -le "$PHASE" ]; then
+        return 0
     else
-        echo -e "${BLUE}[0.2]${NC} WP-CLI пропущен (--force-sql)"
-        WP_CLI_AVAILABLE=false
-    fi
-    
-    # 0.3 Проверка доступности БД
-    echo -e "${BLUE}[0.3]${NC} Проверка доступности базы данных..."
-    
-    if run_sql "SELECT 1" > /dev/null 2>&1; then
-        test_pass "База данных доступна"
-    else
-        test_fail "База данных недоступна"
         return 1
     fi
-    
-    # 0.4 Проверка доступности сайта
-    echo -e "${BLUE}[0.4]${NC} Проверка доступности сайта..."
-    
-    # Следуем редиректам (-L) чтобы получить финальный код
-    HTTP_CODE=$(curl_with_auth -s -o /dev/null -w "%{http_code}" -L --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "000")
-    
-    if [[ "$HTTP_CODE" =~ ^(200|301|302)$ ]]; then
-        test_pass "Сайт доступен (${SITE_URL}, HTTP $HTTP_CODE)"
-    else
-        test_fail "Сайт недоступен (HTTP $HTTP_CODE)"
-        return 1
-    fi
-    
-    echo ""
-    test_info "Режим тестирования: $([ "$WP_CLI_AVAILABLE" = true ] && echo 'WP-CLI + SQL' || echo 'Только SQL')"
-}
-
-# ============================================
-# ФАЗА 1: Установка и настройка Polylang
-# ============================================
-phase_1_tests() {
-    phase_header "1" "Установка и настройка Polylang"
-    
-    local test_num=0
-    
-    # 1.1 Проверка что Polylang установлен и активен
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Polylang установлен и активен..."
-    
-    if [ "$WP_CLI_AVAILABLE" = true ]; then
-        if run_wp_cli "plugin list --status=active --format=csv" 2>/dev/null | grep -q "polylang"; then
-            POLYLANG_VERSION=$(run_wp_cli "plugin get polylang --field=version" 2>/dev/null || echo "unknown")
-            test_pass "Polylang активен (v${POLYLANG_VERSION})"
-        else
-            test_fail "Polylang не активен"
-        fi
-    else
-        POLYLANG_CHECK=$(run_sql "SELECT option_value FROM wp_options WHERE option_name = 'active_plugins'" 2>/dev/null)
-        if echo "$POLYLANG_CHECK" | grep -q "polylang"; then
-            test_pass "Polylang активен (SQL)"
-        else
-            test_fail "Polylang не активен (SQL)"
-        fi
-    fi
-    
-    # 1.2 Проверка языков созданы
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Языки созданы (ru, en)..."
-    
-    LANGUAGES=$(run_sql "SELECT t.slug FROM wp_terms t JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id WHERE tt.taxonomy = 'language' ORDER BY t.slug")
-    
-    if echo "$LANGUAGES" | grep -q "ru" && echo "$LANGUAGES" | grep -q "en"; then
-        test_pass "Языки ru и en созданы"
-    else
-        test_fail "Языки не созданы (найдено: $LANGUAGES)"
-    fi
-    
-    # 1.3 Проверка дефолтного языка
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Дефолтный язык = ru..."
-    
-    if [ "$WP_CLI_AVAILABLE" = true ]; then
-        DEFAULT_LANG=$(run_wp_cli "option get polylang --format=json" 2>/dev/null | grep -o '"default_lang"[^,]*' | cut -d'"' -f4)
-    else
-        POLYLANG_OPT=$(run_sql "SELECT option_value FROM wp_options WHERE option_name = 'polylang'")
-        if echo "$POLYLANG_OPT" | grep -q '"default_lang";s:2:"ru"'; then
-            DEFAULT_LANG="ru"
-        else
-            DEFAULT_LANG=$(echo "$POLYLANG_OPT" | grep -o 'default_lang[^;]*' | head -1)
-        fi
-    fi
-    
-    if [ "$DEFAULT_LANG" == "ru" ]; then
-        test_pass "Дефолтный язык = ru"
-    else
-        test_fail "Дефолтный язык = $DEFAULT_LANG (ожидалось: ru)"
-    fi
-    
-    # 1.4 Проверка hide_default = true
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} hide_default = true..."
-    
-    POLYLANG_OPT=$(run_sql "SELECT option_value FROM wp_options WHERE option_name = 'polylang'")
-    
-    if echo "$POLYLANG_OPT" | grep -q '"hide_default";b:1'; then
-        test_pass "hide_default = true"
-    else
-        test_fail "hide_default != true"
-    fi
-    
-    # 1.5 Проверка rewrite = true
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} rewrite = true..."
-    
-    if echo "$POLYLANG_OPT" | grep -q '"rewrite";b:1'; then
-        test_pass "rewrite = true"
-    else
-        test_fail "rewrite != true"
-    fi
-    
-    # 1.6 Проверка CPT включены
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} CPT включены для перевода..."
-    
-    # Ожидаемые CPT: artist, collection, events, photo, vistavki
-    EXPECTED_CPT=("artist" "collection" "events" "photo" "vistavki")
-    MISSING_CPT=()
-    
-    for cpt in "${EXPECTED_CPT[@]}"; do
-        if ! echo "$POLYLANG_OPT" | grep -q "\"$cpt\""; then
-            MISSING_CPT+=("$cpt")
-        fi
-    done
-    
-    if [ ${#MISSING_CPT[@]} -eq 0 ]; then
-        test_pass "Все CPT включены: ${EXPECTED_CPT[*]}"
-    else
-        test_fail "Отсутствуют CPT: ${MISSING_CPT[*]}"
-    fi
-    
-    # 1.7 Проверка URL главной страницы RU
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Главная RU доступна (/)..."
-    
-    HTTP_CODE=$(curl_with_auth -s -o /dev/null -w "%{http_code}" --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "000")
-    
-    if [ "$HTTP_CODE" == "200" ]; then
-        test_pass "/ → HTTP 200"
-    else
-        test_fail "/ → HTTP $HTTP_CODE"
-    fi
-    
-    # 1.8 Проверка URL главной страницы EN
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Главная EN доступна (/en/)..."
-    
-    HTTP_CODE=$(curl_with_auth -s -o /dev/null -w "%{http_code}" --max-time 10 "${SITE_URL}/en/" 2>/dev/null || echo "000")
-    
-    if [ "$HTTP_CODE" == "200" ]; then
-        test_pass "/en/ → HTTP 200"
-    else
-        test_fail "/en/ → HTTP $HTTP_CODE"
-    fi
-    
-    # 1.9 Проверка HTML lang атрибута
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} HTML lang атрибут корректен..."
-    
-    HTML_LANG_RU=$(curl_with_auth -s --max-time 10 "${SITE_URL}/" 2>/dev/null | grep -o '<html[^>]*lang="[^"]*"' | head -1 || echo "")
-    HTML_LANG_EN=$(curl_with_auth -s --max-time 10 "${SITE_URL}/en/" 2>/dev/null | grep -o '<html[^>]*lang="[^"]*"' | head -1 || echo "")
-    
-    if echo "$HTML_LANG_RU" | grep -qi "ru" && echo "$HTML_LANG_EN" | grep -qi "en"; then
-        test_pass "HTML lang: RU=ru, EN=en"
-    else
-        test_fail "HTML lang некорректен (RU: $HTML_LANG_RU, EN: $HTML_LANG_EN)"
-    fi
-    
-    # 1.10 Проверка что все посты имеют язык (нет постов без языка)
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[1.$test_num]${NC} Все опубликованные посты имеют язык..."
-    
-    # Считаем посты без языка (исключаем служебные типы)
-    POSTS_WITHOUT_LANG=$(run_sql "
-        SELECT COUNT(*) FROM wp_posts p
-        WHERE p.post_status = 'publish'
-        AND p.post_type IN ('post', 'page', 'artist', 'collection', 'events', 'vistavki', 'photo')
-        AND p.ID NOT IN (
-            SELECT tr.object_id FROM wp_term_relationships tr
-            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-            WHERE tt.taxonomy = 'language'
-        )
-    " 2>/dev/null | tr -d '[:space:]')
-    
-    if [ "$POSTS_WITHOUT_LANG" == "0" ] 2>/dev/null; then
-        test_pass "Все посты имеют язык"
-    else
-        test_fail "Найдено $POSTS_WITHOUT_LANG постов без языка! Нажмите ссылку в админке: 'Set language to all posts without language'"
-    fi
-}
-
-# ============================================
-# ФАЗА 2: SQL миграции (EN меню)
-# ============================================
-phase_2_tests() {
-    phase_header "2" "SQL миграции (EN меню)"
-    
-    local test_num=0
-    
-    # 2.1 Проверка что EN Header меню создано
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Header меню создано..."
-    
-    EN_HEADER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'main-menu-en'" 2>/dev/null | tr -d '[:space:]')
-    
-    if [ -n "$EN_HEADER_MENU" ] && [ "$EN_HEADER_MENU" != "NULL" ]; then
-        test_pass "Main Menu EN существует (term_id=$EN_HEADER_MENU)"
-    else
-        test_fail "Main Menu EN не найдено"
-    fi
-    
-    # 2.2 Проверка что EN Footer меню создано
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Footer меню создано..."
-    
-    EN_FOOTER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'footer-menu-en'" 2>/dev/null | tr -d '[:space:]')
-    
-    if [ -n "$EN_FOOTER_MENU" ] && [ "$EN_FOOTER_MENU" != "NULL" ]; then
-        test_pass "Footer Menu EN существует (term_id=$EN_FOOTER_MENU)"
-    else
-        test_fail "Footer Menu EN не найдено"
-    fi
-    
-    # 2.3 Проверка пунктов EN Header меню
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Header меню содержит пункт Home..."
-    
-    if [ -n "$EN_HEADER_MENU" ]; then
-        HOME_ITEM=$(run_sql "
-            SELECT p.post_title FROM wp_posts p
-            JOIN wp_term_relationships tr ON p.ID = tr.object_id
-            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-            WHERE tt.taxonomy = 'nav_menu' AND tt.term_id = $EN_HEADER_MENU
-            AND p.post_type = 'nav_menu_item' AND p.post_title = 'Home'
-        " 2>/dev/null | tr -d '[:space:]')
-        
-        if [ "$HOME_ITEM" == "Home" ]; then
-            test_pass "Пункт 'Home' найден в EN Header меню"
-        else
-            test_fail "Пункт 'Home' не найден в EN Header меню"
-        fi
-    else
-        test_skip "EN Header меню не существует"
-    fi
-    
-    # 2.4 Проверка пунктов EN Footer меню (телефон)
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Footer меню содержит телефон..."
-    
-    if [ -n "$EN_FOOTER_MENU" ]; then
-        PHONE_ITEM=$(run_sql "
-            SELECT COUNT(*) FROM wp_posts p
-            JOIN wp_term_relationships tr ON p.ID = tr.object_id
-            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-            WHERE tt.taxonomy = 'nav_menu' AND tt.term_id = $EN_FOOTER_MENU
-            AND p.post_type = 'nav_menu_item' AND p.post_title LIKE '%980%'
-        " 2>/dev/null | tr -d '[:space:]')
-        
-        if [ "$PHONE_ITEM" -ge 1 ] 2>/dev/null; then
-            test_pass "Пункт с телефоном найден в EN Footer меню"
-        else
-            test_fail "Пункт с телефоном не найден в EN Footer меню"
-        fi
-    else
-        test_skip "EN Footer меню не существует"
-    fi
-    
-    # 2.5 Проверка пунктов EN Footer меню (email)
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Footer меню содержит email..."
-    
-    if [ -n "$EN_FOOTER_MENU" ]; then
-        EMAIL_ITEM=$(run_sql "
-            SELECT COUNT(*) FROM wp_posts p
-            JOIN wp_term_relationships tr ON p.ID = tr.object_id
-            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-            WHERE tt.taxonomy = 'nav_menu' AND tt.term_id = $EN_FOOTER_MENU
-            AND p.post_type = 'nav_menu_item' AND p.post_title LIKE '%maslovka.org%'
-        " 2>/dev/null | tr -d '[:space:]')
-        
-        if [ "$EMAIL_ITEM" -ge 1 ] 2>/dev/null; then
-            test_pass "Пункт с email найден в EN Footer меню"
-        else
-            test_fail "Пункт с email не найден в EN Footer меню"
-        fi
-    else
-        test_skip "EN Footer меню не существует"
-    fi
-    
-    # 2.6 Проверка nav_menus в опции polylang
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} nav_menus настроен в Polylang..."
-    
-    POLYLANG_OPT=$(run_sql "SELECT option_value FROM wp_options WHERE option_name = 'polylang'" 2>/dev/null)
-    
-    if echo "$POLYLANG_OPT" | grep -q '"nav_menus"' && echo "$POLYLANG_OPT" | grep -q '"maslovka"'; then
-        test_pass "nav_menus содержит настройки для темы maslovka"
-    else
-        test_fail "nav_menus пустой или не содержит тему maslovka"
-    fi
-    
-    # 2.7 Проверка что main-menu привязан к языкам
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} main-menu привязан к ru и en..."
-    
-    if echo "$POLYLANG_OPT" | grep -q 'main-menu.*ru.*en'; then
-        test_pass "main-menu привязан к обоим языкам"
-    else
-        # Альтернативная проверка через отдельные паттерны
-        if echo "$POLYLANG_OPT" | grep -q '"main-menu"' && echo "$POLYLANG_OPT" | grep -q '"ru"' && echo "$POLYLANG_OPT" | grep -q '"en"'; then
-            test_pass "main-menu привязан к обоим языкам"
-        else
-            test_fail "main-menu не привязан к языкам"
-        fi
-    fi
-    
-    # 2.8 Проверка что footer-menu привязан к языкам
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} footer-menu привязан к ru и en..."
-    
-    if echo "$POLYLANG_OPT" | grep -q 'footer-menu.*ru.*en'; then
-        test_pass "footer-menu привязан к обоим языкам"
-    else
-        # Альтернативная проверка
-        if echo "$POLYLANG_OPT" | grep -q '"footer-menu"' || echo "$POLYLANG_OPT" | grep -q 'footer-menu'; then
-            test_pass "footer-menu привязан к обоим языкам"
-        else
-            test_fail "footer-menu не привязан к языкам"
-        fi
-    fi
-    
-    # 2.9 Проверка EN Header меню на фронтенде
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Header меню отображается на /en/..."
-    
-    EN_PAGE_HTML=$(curl_with_auth -s --max-time 10 "${SITE_URL}/en/" 2>/dev/null)
-    
-    if echo "$EN_PAGE_HTML" | grep -qi "Home"; then
-        test_pass "Пункт 'Home' найден на странице /en/"
-    else
-        test_fail "Пункт 'Home' не найден на странице /en/"
-    fi
-    
-    # 2.10 Проверка EN Footer меню на фронтенде
-    test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} EN Footer меню отображается на /en/..."
-    
-    if echo "$EN_PAGE_HTML" | grep -qi "hello@maslovka.org"; then
-        test_pass "Email найден в футере на странице /en/"
-    else
-        test_fail "Email не найден в футере на странице /en/"
-    fi
-}
-
-phase_3_tests() {
-    phase_header "3" "Переводы темы"
-    
-    # Определяем путь к теме в зависимости от окружения
-    local theme_path=""
-    if [ "$IS_LOCAL" = true ]; then
-        theme_path="${LOCAL_THEME_PATH}"
-    else
-        # Для DEV/PROD пропускаем тесты файловой системы
-        test_skip "Тесты файловой системы доступны только для local"
-        return
-    fi
-    
-    # 3.1 Проверка наличия файла переводов .mo
-    echo "[3.1] Проверка файла переводов en_US.mo..."
-    local mo_file="${theme_path}/languages/en_US.mo"
-    if [[ -f "$mo_file" ]]; then
-        test_pass "Файл переводов en_US.mo существует"
-    else
-        test_fail "Файл en_US.mo не найден в ${mo_file}"
-    fi
-    
-    # 3.2 Проверка наличия .pot шаблона
-    echo "[3.2] Проверка файла шаблона maslovka.pot..."
-    local pot_file="${theme_path}/languages/maslovka.pot"
-    if [[ -f "$pot_file" ]]; then
-        test_pass "Файл шаблона maslovka.pot существует"
-    else
-        test_fail "Файл maslovka.pot не найден в ${pot_file}"
-    fi
-    
-    # 3.3 Проверка загрузки textdomain в теме
-    echo "[3.3] Проверка load_theme_textdomain в theme-setup.php..."
-    if grep -q "load_theme_textdomain.*maslovka" "${theme_path}/inc/theme/theme-setup.php" 2>/dev/null; then
-        test_pass "load_theme_textdomain('maslovka') подключен"
-    else
-        test_fail "load_theme_textdomain не найден в theme-setup.php"
-    fi
-    
-    # 3.4 Проверка переводов на странице 404 EN
-    echo "[3.4] Проверка перевода страницы 404 на /en/..."
-    local en_404=$(curl_with_auth -s -L "${SITE_URL}/en/nonexistent-page-xyz-123/")
-    if echo "$en_404" | grep -q "Page not found\|Страница не найдена"; then
-        test_pass "Страница 404 на EN доступна"
-    else
-        test_skip "Не удалось проверить 404 на EN (нет Polylang PRO)"
-    fi
-    
-    # 3.5 Проверка функций перевода в 404.php
-    echo "[3.5] Проверка использования __() в 404.php..."
-    if grep -q "__(" "${theme_path}/404.php" 2>/dev/null; then
-        test_pass "Функции перевода используются в 404.php"
-    else
-        test_fail "Функции перевода не найдены в 404.php"
-    fi
-    
-    # 3.6 Проверка функций перевода в footer.php (cookies)
-    echo "[3.6] Проверка переводов в footer.php..."
-    if grep -qE "esc_html_e.*maslovka|__.*maslovka" "${theme_path}/footer.php" 2>/dev/null; then
-        test_pass "Переводы подключены в footer.php"
-    else
-        test_fail "Переводы не найдены в footer.php"
-    fi
-    
-    # 3.7 Проверка переводов в single.php (страница художника)
-    echo "[3.7] Проверка переводов в single.php..."
-    if grep -qE "esc_html_e.*maslovka|__.*maslovka" "${theme_path}/single.php" 2>/dev/null; then
-        test_pass "Переводы подключены в single.php"
-    else
-        test_fail "Переводы не найдены в single.php"
-    fi
-    
-    # 3.8 Проверка переводов в single-collection.php
-    echo "[3.8] Проверка переводов в single-collection.php..."
-    if grep -qE "esc_html_e.*maslovka|__.*maslovka" "${theme_path}/single-collection.php" 2>/dev/null; then
-        test_pass "Переводы подключены в single-collection.php"
-    else
-        test_fail "Переводы не найдены в single-collection.php"
-    fi
-    
-    # 3.9 Проверка переводов в page-artists.php
-    echo "[3.9] Проверка переводов в page-artists.php..."
-    if grep -qE "esc_attr_e.*maslovka|__.*maslovka" "${theme_path}/page-artists.php" 2>/dev/null; then
-        test_pass "Переводы подключены в page-artists.php"
-    else
-        test_fail "Переводы не найдены в page-artists.php"
-    fi
-    
-    # 3.10 Проверка количества строк в .pot файле
-    echo "[3.10] Проверка количества переводимых строк..."
-    if [[ -f "$pot_file" ]]; then
-        local msgid_count=$(grep -c "^msgid " "$pot_file" 2>/dev/null || echo "0")
-        if [[ "$msgid_count" -ge 30 ]]; then
-            test_pass "Найдено $msgid_count переводимых строк в .pot"
-        else
-            test_fail "Мало переводимых строк: $msgid_count (ожидается >= 30)"
-        fi
-    else
-        test_skip "Файл .pot не найден для подсчета строк"
-    fi
-    
-    # 3.11 Проверка наличия языкового переключателя в topmenu.php
-    echo "[3.11] Проверка языкового переключателя в topmenu.php..."
-    if grep -q "pll_the_languages" "${theme_path}/components/topmenu.php" 2>/dev/null; then
-        test_pass "Переключатель языков добавлен в topmenu.php"
-    else
-        test_fail "pll_the_languages не найден в topmenu.php"
-    fi
-    
-    # 3.12 Проверка стилей языкового переключателя
-    echo "[3.12] Проверка стилей переключателя языков..."
-    if [[ -f "${theme_path}/src/scss/components/_language-switcher.scss" ]]; then
-        test_pass "Файл стилей language-switcher.scss существует"
-    else
-        test_fail "Файл _language-switcher.scss не найден"
-    fi
-    
-    # 3.13 Проверка отображения переключателя на странице
-    echo "[3.13] Проверка отображения переключателя на главной..."
-    local homepage=$(curl_with_auth -s -L "${SITE_URL}/")
-    if echo "$homepage" | grep -q "language-switcher"; then
-        test_pass "Переключатель языков отображается на странице"
-    else
-        test_skip "Переключатель не найден в HTML (возможно Polylang не активен)"
-    fi
-}
-
-phase_4_tests() {
-    phase_header "4" "Кастомные плагины"
-    test_skip "Тесты Фазы 4 еще не реализованы"
-}
-
-phase_5_tests() {
-    phase_header "5" "Демо-контент"
-    test_skip "Тесты Фазы 5 еще не реализованы"
-}
-
-phase_6_tests() {
-    phase_header "6" "SEO оптимизация"
-    test_skip "Тесты Фазы 6 еще не реализованы"
-}
-
-phase_7_tests() {
-    phase_header "7" "Миграция на DEV"
-    test_skip "Тесты Фазы 7 еще не реализованы"
-}
-
-phase_8_tests() {
-    phase_header "8" "Деплой на PROD"
-    test_skip "Тесты Фазы 8 еще не реализованы"
-}
-
-phase_9_tests() {
-    phase_header "9" "Документация"
-    test_skip "Тесты Фазы 9 еще не реализованы"
 }
 
 # ============================================
@@ -811,7 +223,13 @@ print_summary() {
     echo -e "${CYAN}════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  Окружение: ${BLUE}$ENVIRONMENT${NC}"
-    echo -e "  Фазы: ${BLUE}0-$PHASE${NC}"
+    
+    if [ -n "$ONLY_PHASES" ]; then
+        echo -e "  Фазы: ${BLUE}только $ONLY_PHASES${NC}"
+    else
+        echo -e "  Фазы: ${BLUE}0-$PHASE${NC}"
+    fi
+    
     echo -e "  Режим: ${BLUE}$([ "$WP_CLI_AVAILABLE" = true ] && echo 'WP-CLI + SQL' || echo 'Только SQL')${NC}"
     echo ""
     echo -e "  ${GREEN}Пройдено:${NC}  $PASSED_TESTS"
@@ -838,13 +256,19 @@ main() {
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  Окружение: ${BLUE}$ENVIRONMENT${NC}"
-    echo -e "  Тестирование до фазы: ${BLUE}$PHASE${NC}"
+    
+    if [ -n "$ONLY_PHASES" ]; then
+        echo -e "  Режим: ${BLUE}только фазы $ONLY_PHASES${NC}"
+    else
+        echo -e "  Тестирование до фазы: ${BLUE}$PHASE${NC}"
+    fi
+    
     echo -e "  Force SQL: ${BLUE}$FORCE_SQL${NC}"
     
     # Настройка переменных окружения
     setup_environment
     
-    # Фаза 0: Предварительные проверки
+    # Фаза 0: Предварительные проверки (выполняется всегда)
     if ! phase_0_checks; then
         echo -e "${RED}Предварительные проверки не пройдены. Тестирование прервано.${NC}"
         print_summary
@@ -852,15 +276,15 @@ main() {
     fi
     
     # Запуск тестов по фазам
-    [ $PHASE -ge 1 ] && phase_1_tests
-    [ $PHASE -ge 2 ] && phase_2_tests
-    [ $PHASE -ge 3 ] && phase_3_tests
-    [ $PHASE -ge 4 ] && phase_4_tests
-    [ $PHASE -ge 5 ] && phase_5_tests
-    [ $PHASE -ge 6 ] && phase_6_tests
-    [ $PHASE -ge 7 ] && phase_7_tests
-    [ $PHASE -ge 8 ] && phase_8_tests
-    [ $PHASE -ge 9 ] && phase_9_tests
+    should_run_phase 1 && phase_1_tests
+    should_run_phase 2 && phase_2_tests
+    should_run_phase 3 && phase_3_tests
+    should_run_phase 4 && phase_4_tests
+    should_run_phase 5 && phase_5_tests
+    should_run_phase 6 && phase_6_tests
+    should_run_phase 7 && phase_7_tests
+    should_run_phase 8 && phase_8_tests
+    should_run_phase 9 && phase_9_tests
     
     # Вывод результатов
     print_summary
