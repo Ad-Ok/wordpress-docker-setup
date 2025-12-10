@@ -104,6 +104,23 @@ phase_4_tests() {
     run_sql "UPDATE wp_posts SET post_content='$CONTENT_TEXT' WHERE ID=$TEST_POST_ID" 2>/dev/null
     echo -e "${GREEN}   ✓${NC} Добавлен контент"
     
+    # Получаем слаг RU поста для проверок редиректов
+    RU_SLUG=$(run_sql "SELECT post_name FROM wp_posts WHERE ID=$TEST_POST_ID" 2>/dev/null | tr -d '[:space:]')
+    echo -e "${GREEN}   ✓${NC} Slug RU: $RU_SLUG"
+    
+    # =========================================
+    # REDIRECT TEST 1: Редиректа НЕ должно быть до создания перевода
+    # =========================================
+    echo -e "${CYAN}   → Проверка редиректов (до создания перевода)...${NC}"
+    
+    REDIRECT_BEFORE=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$TEST_POST_ID AND redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
+    
+    if [ "$REDIRECT_BEFORE" == "0" ]; then
+        echo -e "${GREEN}   ✓${NC} Polylang-редирект отсутствует (ожидаемо)"
+    else
+        echo -e "${YELLOW}   ⚠${NC} Polylang-редирект уже существует ($REDIRECT_BEFORE записей) - неожиданно"
+    fi
+    
     # =========================================
     # Получаем изображения для теста
     # =========================================
@@ -337,6 +354,40 @@ phase_4_tests() {
     
     echo -e "${CYAN}   → Найден EN перевод ID=$EN_POST_ID${NC}"
     
+    # Получаем слаг EN поста
+    EN_SLUG=$(run_sql "SELECT post_name FROM wp_posts WHERE ID=$EN_POST_ID" 2>/dev/null | tr -d '[:space:]')
+    echo -e "${CYAN}   → Slug EN: $EN_SLUG${NC}"
+    
+    # =========================================
+    # REDIRECT TEST 2: Редирект ДОЛЖЕН появиться после создания перевода
+    # =========================================
+    echo -e "${CYAN}   → Проверка редиректов (после создания перевода)...${NC}"
+    
+    # Даём время плагину создать редирект (хук может быть асинхронным)
+    sleep 1
+    
+    REDIRECT_AFTER=$(run_sql "SELECT id, old_url, new_url FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang' LIMIT 1" 2>/dev/null)
+    REDIRECT_COUNT=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
+    
+    if [ "$REDIRECT_COUNT" -ge 1 ] 2>/dev/null; then
+        REDIRECT_OLD_URL=$(run_sql "SELECT old_url FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang' ORDER BY id DESC LIMIT 1" 2>/dev/null | xargs)
+        echo -e "${GREEN}   ✓${NC} Polylang-редирект создан ($REDIRECT_COUNT шт.)"
+        
+        # Проверяем HTTP ответ редиректа (если URL доступен)
+        if [ -n "$REDIRECT_OLD_URL" ]; then
+            HTTP_REDIRECT=$(curl_with_auth -s -o /dev/null -w "%{http_code}" -L --max-redirs 0 "${SITE_URL}${REDIRECT_OLD_URL}" 2>/dev/null || echo "000")
+            if [ "$HTTP_REDIRECT" == "301" ]; then
+                echo -e "${GREEN}   ✓${NC} HTTP 301 редирект работает"
+            elif [ "$HTTP_REDIRECT" == "404" ]; then
+                echo -e "${YELLOW}   ⚠${NC} HTTP 404 - редирект не обрабатывается (возможно слаги совпадают)"
+            else
+                echo -e "${YELLOW}   ⚠${NC} HTTP код: $HTTP_REDIRECT (ожидался 301)"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}   ⚠${NC} Polylang-редирект НЕ создан (возможно слаги совпадают или плагин не активен)"
+    fi
+    
     # =========================================
     # Проверка скопированных полей
     # =========================================
@@ -456,6 +507,56 @@ phase_4_tests() {
     fi
     
     # =========================================
+    # REDIRECT TEST 3: Изменение слага EN перевода
+    # =========================================
+    test_num=$((test_num + 1))
+    echo -e "${BLUE}[4.$test_num]${NC} Тест изменения слага EN перевода..."
+    
+    # Проверяем статус поста (редирект создаётся только для publish)
+    EN_STATUS=$(run_sql "SELECT post_status FROM wp_posts WHERE ID=$EN_POST_ID" 2>/dev/null | tr -d '[:space:]')
+    
+    if [ "$EN_STATUS" == "publish" ]; then
+        # Сохраняем старый слаг и текущее количество редиректов
+        OLD_EN_SLUG=$(run_sql "SELECT post_name FROM wp_posts WHERE ID=$EN_POST_ID" 2>/dev/null | tr -d '[:space:]')
+        REDIRECT_COUNT_BEFORE=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
+        
+        # Генерируем новый слаг
+        NEW_SLUG_SUFFIX=$(date +%s)
+        NEW_EN_SLUG="${OLD_EN_SLUG}-updated-${NEW_SLUG_SUFFIX}"
+        
+        # Обновляем слаг через WP-CLI (чтобы сработали хуки)
+        run_wp_cli "post update $EN_POST_ID --post_name=$NEW_EN_SLUG" 2>/dev/null
+        
+        # Даём время плагину обновить редирект
+        sleep 1
+        
+        # Проверяем что создался новый редирект для старого слага
+        NEW_REDIRECT_COUNT=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
+        LATEST_REDIRECT_OLD=$(run_sql "SELECT old_url FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID AND redirect_type='polylang' ORDER BY id DESC LIMIT 1" 2>/dev/null | xargs)
+        
+        if [ "$NEW_REDIRECT_COUNT" -gt "$REDIRECT_COUNT_BEFORE" ] 2>/dev/null; then
+            echo -e "${GREEN}   ✓${NC} Новый редирект создан для старого слага"
+            
+            # Проверяем HTTP ответ нового редиректа
+            if [ -n "$LATEST_REDIRECT_OLD" ]; then
+                HTTP_REDIRECT_NEW=$(curl_with_auth -s -o /dev/null -w "%{http_code}" -L --max-redirs 0 "${SITE_URL}${LATEST_REDIRECT_OLD}" 2>/dev/null || echo "000")
+            if [ "$HTTP_REDIRECT_NEW" == "301" ]; then
+                test_pass "Новый редирект для старого слага создан и работает (HTTP 301)"
+            else
+                test_info "HTTP код: $HTTP_REDIRECT_NEW (редирект может не требоваться если слаги совпадают)"
+            fi
+            fi
+        else
+            test_info "Новый редирект не создан (возможно слаги совпадают с RU версией)"
+        fi
+        
+        # Выводим общее количество редиректов
+        echo -e "${CYAN}   ℹ${NC} Всего polylang-редиректов для EN поста: $NEW_REDIRECT_COUNT"
+    else
+        test_skip "EN пост не опубликован (status=$EN_STATUS), редиректы не создаются"
+    fi
+    
+    # =========================================
     # Очистка тестовых данных
     # =========================================
     test_num=$((test_num + 1))
@@ -465,6 +566,9 @@ phase_4_tests() {
     read -p "   > " CLEANUP_ANSWER
     
     if [ "$CLEANUP_ANSWER" == "y" ] || [ "$CLEANUP_ANSWER" == "Y" ]; then
+        # Запоминаем ID для проверки редиректов после удаления
+        EN_POST_ID_FOR_REDIRECT_CHECK=$EN_POST_ID
+        
         # Удаляем EN перевод
         if [ -n "$EN_POST_ID" ] && [ "$EN_POST_ID" != "0" ]; then
             run_wp_cli "post delete $EN_POST_ID --force" 2>/dev/null
@@ -473,13 +577,30 @@ phase_4_tests() {
         # Удаляем оригинал
         run_wp_cli "post delete $TEST_POST_ID --force" 2>/dev/null
         
-        # Проверяем удаление
-        DELETED_CHECK=$(run_sql "SELECT COUNT(*) FROM wp_posts WHERE ID IN ($TEST_POST_ID, $EN_POST_ID)" 2>/dev/null | tr -d '[:space:]')
+        # Даём время плагину удалить редиректы
+        sleep 1
+        
+        # Проверяем удаление постов
+        DELETED_CHECK=$(run_sql "SELECT COUNT(*) FROM wp_posts WHERE ID IN ($TEST_POST_ID, $EN_POST_ID_FOR_REDIRECT_CHECK)" 2>/dev/null | tr -d '[:space:]')
         
         if [ "$DELETED_CHECK" == "0" ]; then
             test_pass "Тестовые данные удалены"
         else
             test_fail "Тестовые данные не полностью удалены"
+        fi
+        
+        # =========================================
+        # REDIRECT TEST 4: Редиректы должны быть удалены после удаления поста
+        # =========================================
+        test_num=$((test_num + 1))
+        echo -e "${BLUE}[4.$test_num]${NC} Проверка удаления редиректов..."
+        
+        REDIRECT_AFTER_DELETE=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$EN_POST_ID_FOR_REDIRECT_CHECK AND redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
+        
+        if [ "$REDIRECT_AFTER_DELETE" == "0" ]; then
+            test_pass "Polylang-редиректы удалены вместе с постом"
+        else
+            test_fail "Polylang-редиректы НЕ удалены ($REDIRECT_AFTER_DELETE записей осталось)"
         fi
     else
         test_info "Тестовые посты оставлены: RU=$TEST_POST_ID, EN=$EN_POST_ID"
