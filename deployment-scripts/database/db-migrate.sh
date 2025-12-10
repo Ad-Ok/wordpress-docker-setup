@@ -63,8 +63,9 @@ ${YELLOW}Создание миграции:${NC}
   Используйте: ${CYAN}./db-create-migration.sh "описание"${NC}
 
 ${YELLOW}Формат миграции:${NC}
-  001_description.sql  - Номер должен быть уникальным
-  Миграции применяются в порядке номеров
+  001_description.sql  - SQL миграция (выполняется через mysql)
+  001_description.php  - PHP миграция (выполняется через php с wp-load.php)
+  Номер должен быть уникальным, миграции применяются в порядке номеров
 
 ${YELLOW}Отслеживание:${NC}
   Примененные миграции хранятся в: ${MIGRATIONS_DIR}/.applied.json
@@ -79,9 +80,9 @@ init_applied_log() {
     fi
 }
 
-# Получить список всех миграций
+# Получить список всех миграций (SQL и PHP)
 get_all_migrations() {
-    find "${MIGRATIONS_DIR}" -name "[0-9][0-9][0-9]_*.sql" 2>/dev/null | sort || true
+    find "${MIGRATIONS_DIR}" \( -name "[0-9][0-9][0-9]_*.sql" -o -name "[0-9][0-9][0-9]_*.php" \) 2>/dev/null | sort || true
 }
 
 # Получить список примененных миграций для окружения
@@ -299,21 +300,35 @@ apply_migration_local() {
         return 1
     fi
     
-    # Проверить Docker
-    if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
-        echo -e "${RED}✗ Docker контейнер '${LOCAL_DB_CONTAINER}' не запущен${NC}"
-        return 1
-    fi
+    # Определяем тип миграции по расширению
+    local file_ext="${migration_file##*.}"
     
     echo -e "${CYAN}→ Применяю миграцию: ${migration_file}${NC}"
     
-    # Применить миграцию
-    docker exec -i "${LOCAL_DB_CONTAINER}" \
-        mysql \
-        -u"${LOCAL_DB_USER}" \
-        -p"${LOCAL_DB_PASS}" \
-        "${LOCAL_DB_NAME}" \
-        < "$migration_path" 2>&1 | sed 's/^/   /'
+    if [ "$file_ext" = "php" ]; then
+        # PHP миграция - запускаем через PHP контейнер
+        if ! docker ps | grep -q "${LOCAL_PHP_CONTAINER:-wordpress_php}"; then
+            echo -e "${RED}✗ Docker контейнер PHP не запущен${NC}"
+            return 1
+        fi
+        
+        # Запускаем PHP-миграцию внутри контейнера
+        docker exec -i "${LOCAL_PHP_CONTAINER:-wordpress_php}" \
+            php "/var/www/html/database/migrations/${migration_file}" 2>&1 | sed 's/^/   /'
+    else
+        # SQL миграция - запускаем через MySQL
+        if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
+            echo -e "${RED}✗ Docker контейнер '${LOCAL_DB_CONTAINER}' не запущен${NC}"
+            return 1
+        fi
+        
+        docker exec -i "${LOCAL_DB_CONTAINER}" \
+            mysql \
+            -u"${LOCAL_DB_USER}" \
+            -p"${LOCAL_DB_PASS}" \
+            "${LOCAL_DB_NAME}" \
+            < "$migration_path" 2>&1 | sed 's/^/   /'
+    fi
     
     if [ ${PIPESTATUS[0]} -eq 0 ]; then
         echo -e "   ${GREEN}✓${NC} Миграция применена"
@@ -335,6 +350,9 @@ apply_migration_remote() {
         echo -e "${RED}✗ Файл миграции не найден: $migration_path${NC}"
         return 1
     fi
+    
+    # Определяем тип миграции по расширению
+    local file_ext="${migration_file##*.}"
     
     # Выбрать параметры окружения
     case "$environment" in
@@ -358,11 +376,28 @@ apply_migration_remote() {
     
     echo -e "${CYAN}→ Применяю миграцию на ${environment}: ${migration_file}${NC}"
     
-    # Отправить и применить миграцию
     local result
-    cat "$migration_path" | ssh "${SSH_USER}@${SSH_HOST}" \
-        "mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
-    result=${PIPESTATUS[1]}
+    
+    if [ "$file_ext" = "php" ]; then
+        # PHP миграция - копируем на сервер и запускаем
+        local remote_migration_path="${REMOTE_WP_PATH}/database/migrations/${migration_file}"
+        
+        # Проверяем что файл существует на сервере
+        if ! ssh "${SSH_USER}@${SSH_HOST}" "test -f ${remote_migration_path}" 2>/dev/null; then
+            echo -e "${RED}✗ PHP-миграция не найдена на сервере: ${remote_migration_path}${NC}"
+            echo -e "${YELLOW}   Убедитесь что код задеплоен перед применением PHP-миграций${NC}"
+            return 1
+        fi
+        
+        # Запускаем через php
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_WP_PATH} && php ${remote_migration_path}" 2>&1 | sed 's/^/   /'
+        result=${PIPESTATUS[0]}
+    else
+        # SQL миграция - отправляем и применяем
+        cat "$migration_path" | ssh "${SSH_USER}@${SSH_HOST}" \
+            "mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
+        result=${PIPESTATUS[1]}
+    fi
     
     if [ $result -eq 0 ]; then
         echo -e "   ${GREEN}✓${NC} Миграция применена на ${environment}"
