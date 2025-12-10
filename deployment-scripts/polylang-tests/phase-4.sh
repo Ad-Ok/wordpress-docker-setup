@@ -203,7 +203,7 @@ phase_4_tests() {
         # Формируем PHP сериализованный массив
         GALLERY_SERIALIZED=$(echo "$GALLERY_IDS" | awk -v count="$GALLERY_COUNT" 'BEGIN{printf "a:%d:{", count} {printf "i:%d;s:%d:\"%s\";", NR-1, length($0), $0} END{printf "}"}')
         run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'работы_художника', '$GALLERY_SERIALIZED')" 2>/dev/null
-        run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_работы_художника', 'field_5e7cfef6e0b7b')" 2>/dev/null
+        run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_работы_художника', 'field_6890b75b646e5')" 2>/dev/null
         echo -e "${GREEN}   ✓${NC} Галерея работ: $GALLERY_COUNT изображений"
     fi
     
@@ -211,14 +211,14 @@ phase_4_tests() {
     # 3. Информативный блок (content_block repeater)
     # =========================================
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'content_block', '1')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block', 'field_5e7cf9f4e0b79')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block', 'field_688c06f80905f')" 2>/dev/null
     
     # Первый блок контента
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'content_block_0_титул_блока', 'Биография художника')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block_0_титул_блока', 'field_5e7cfa1ce0b7a')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block_0_титул_блока', 'field_688c075c09060')" 2>/dev/null
     
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'content_block_0_описание', 'Тестовое описание биографии художника ${RANDOM_SURNAME}. Родился в 1950 году, работал в различных техниках.')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block_0_описание', 'field_content_description')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_content_block_0_описание', 'field_688c08a093685')" 2>/dev/null
     
     echo -e "${GREEN}   ✓${NC} Информативный блок: 1 запись"
     
@@ -226,11 +226,11 @@ phase_4_tests() {
     # 4. Даты жизни
     # =========================================
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'годы_жизни', '1950 — 2020')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_годы_жизни', 'field_5e7cf9c3e0b78')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_годы_жизни', 'field_68916b5033e26')" 2>/dev/null
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'birth_date', '19500115')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_birth_date', 'field_birth_date')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_birth_date', 'field_artist_birth_date')" 2>/dev/null
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'death_date', '20201231')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_death_date', 'field_death_date')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_death_date', 'field_artist_death_date')" 2>/dev/null
     echo -e "${GREEN}   ✓${NC} Даты жизни: 1950-2020"
     
     # =========================================
@@ -242,9 +242,9 @@ phase_4_tests() {
     RANDOM_PATRONYMIC=${PATRONYMICS[$((RANDOM % ${#PATRONYMICS[@]}))]}
     
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'first_name', '$RANDOM_FIRST')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_first_name', 'field_first_name')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_first_name', 'field_artist_first_name')" 2>/dev/null
     run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, 'patronymic', '$RANDOM_PATRONYMIC')" 2>/dev/null
-    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_patronymic', 'field_patronymic')" 2>/dev/null
+    run_sql "INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES ($TEST_POST_ID, '_patronymic', 'field_artist_patronymic')" 2>/dev/null
     echo -e "${GREEN}   ✓${NC} ФИО: $RANDOM_FIRST $RANDOM_PATRONYMIC ${RANDOM_SURNAME}"
     
     # =========================================
