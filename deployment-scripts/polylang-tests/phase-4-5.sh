@@ -47,10 +47,10 @@ phase_4_5_tests() {
     block_d_test_collection
     
     # Блок E: Тест events
-    # block_e_test_events
+    block_e_test_events
     
     # Блок F: Тест vistavki
-    # block_f_test_vistavki
+    block_f_test_vistavki
     
     # Блок G: Полнота переводов таксономий
     # block_g_taxonomy_coverage

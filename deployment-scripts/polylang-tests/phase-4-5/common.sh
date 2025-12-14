@@ -17,8 +17,8 @@ ALL_TAXONOMIES=("art_form" "period" "genres" "styles" "techniques" "materials" "
 # === ACF поля (из файлов inc/acf-fields/) ===
 ACF_ARTIST=("first_name" "patronymic" "birth_date" "death_date" "работы_художника" "фото_художника")
 ACF_COLLECTION=("artist_id" "year_created" "current_location" "status" "height" "width" "depth")
-ACF_EVENTS=("ссылка_для_кнопки" "текст_в_кнопке" "цвет_блока" "дата_начала" "дата" "цвет_текста_события")
-ACF_VISTAVKI=("описание_мероприятия" "ссылка_купить" "текст_в_кнопке" "Картинка_выставки" "фото_выставки")
+ACF_EVENTS=("ссылка_для_кнопки" "текст_в_кнопке" "цвет_блока" "дата_начала" "дата" "цвет_текста_события" "content_block")
+ACF_VISTAVKI=("описание_мероприятия" "ссылка_купить" "текст_в_кнопке" "Картинка_выставки" "content_block")
 
 # === URL архивов ===
 ARCHIVE_URL_ARTIST="/artists/"
