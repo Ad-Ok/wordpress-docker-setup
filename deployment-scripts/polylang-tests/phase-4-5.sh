@@ -44,7 +44,7 @@ phase_4_5_tests() {
     block_c_test_artist
     
     # Блок D: Тест collection
-    # block_d_test_collection
+    block_d_test_collection
     
     # Блок E: Тест events
     # block_e_test_events

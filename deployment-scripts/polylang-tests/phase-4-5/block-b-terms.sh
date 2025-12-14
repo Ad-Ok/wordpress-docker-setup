@@ -18,16 +18,6 @@ block_b_create_terms() {
         local ru_name="$(get_test_term_ru $taxonomy)"
         local en_name="$(get_test_term_en $taxonomy)"
         
-        # Удалить старые тестовые термины если существуют
-        local existing_ru=$(run_wp_cli term list "$taxonomy" --name="$ru_name" --format=ids 2>/dev/null)
-        if [ -n "$existing_ru" ]; then
-            run_wp_cli term delete "$taxonomy" $existing_ru 2>/dev/null || true
-        fi
-        local existing_en=$(run_wp_cli term list "$taxonomy" --name="$en_name" --format=ids 2>/dev/null)
-        if [ -n "$existing_en" ]; then
-            run_wp_cli term delete "$taxonomy" $existing_en 2>/dev/null || true
-        fi
-        
         # Создать термины (оба будут с языком RU по умолчанию)
         local ru_id=$(run_wp_cli term create "$taxonomy" "$ru_name" --porcelain 2>&1 | grep -oE '[0-9]+' | head -1)
         local en_id=$(run_wp_cli term create "$taxonomy" "$en_name" --porcelain 2>&1 | grep -oE '[0-9]+' | head -1)
