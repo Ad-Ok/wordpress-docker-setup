@@ -50,14 +50,13 @@ run_sql() {
 
 # Выполнение WP-CLI команды
 run_wp_cli() {
-    local cmd="$1"
-    
     if [ "$IS_LOCAL" = true ]; then
-        # Для LOCAL - через docker
+        # Для LOCAL - через docker (используем "$@" для правильной передачи аргументов с пробелами)
         docker compose -f "${LOCAL_PROJECT_ROOT}/docker-compose.yml" exec -T php \
-            wp $cmd --allow-root 2>/dev/null
+            wp "$@" --allow-root 2>/dev/null
     else
-        # Для DEV/PROD - через SSH
+        # Для DEV/PROD - через SSH (объединяем все аргументы в строку)
+        local cmd="$*"
         ssh -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
             "cd '$WP_PATH' && wp $cmd" 2>/dev/null
     fi

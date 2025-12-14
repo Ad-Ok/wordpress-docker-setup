@@ -31,8 +31,7 @@ source "${TESTS_DIR}/phase-0.sh"
 source "${TESTS_DIR}/phase-1.sh"
 source "${TESTS_DIR}/phase-2.sh"
 source "${TESTS_DIR}/phase-3.sh"
-source "${TESTS_DIR}/phase-4.sh"
-source "${TESTS_DIR}/phase-5.sh"
+source "${TESTS_DIR}/phase-4-5.sh"
 source "${TESTS_DIR}/phase-6.sh"
 source "${TESTS_DIR}/phase-7.sh"
 source "${TESTS_DIR}/phase-8.sh"
@@ -279,8 +278,8 @@ main() {
     should_run_phase 1 && phase_1_tests
     should_run_phase 2 && phase_2_tests
     should_run_phase 3 && phase_3_tests
-    should_run_phase 4 && phase_4_tests
-    should_run_phase 5 && phase_5_tests
+    should_run_phase 4 && phase_4_5_tests
+    should_run_phase 5 && phase_4_5_tests
     should_run_phase 6 && phase_6_tests
     should_run_phase 7 && phase_7_tests
     should_run_phase 8 && phase_8_tests
