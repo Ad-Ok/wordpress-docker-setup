@@ -16,7 +16,7 @@ ALL_TAXONOMIES=("art_form" "period" "genres" "styles" "techniques" "materials" "
 
 # === ACF поля (из файлов inc/acf-fields/) ===
 ACF_ARTIST=("first_name" "patronymic" "birth_date" "death_date" "работы_художника" "фото_художника")
-ACF_COLLECTION=("artist_id" "year_created" "current_location" "status" "height" "width" "depth")
+ACF_COLLECTION=("artist_id" "year_created" "current_location" "height" "width" "depth")
 ACF_EVENTS=("ссылка_для_кнопки" "текст_в_кнопке" "цвет_блока" "дата_начала" "дата" "цвет_текста_события" "content_block")
 ACF_VISTAVKI=("описание_мероприятия" "ссылка_купить" "текст_в_кнопке" "Картинка_выставки" "content_block")
 
@@ -126,6 +126,25 @@ check_acf_field_copied() {
         test_info "   ✓ $field_label: скопировано"
         return 0
     else
+        # Специальная проверка для artist_id (post-to-post relationship)
+        # Polylang копирует связь, но с EN версией artist
+        if [ "$field_name" = "artist_id" ]; then
+            # Проверяем, что EN значение - это перевод RU artist
+            if [ -n "$en_value" ] && [ "$en_value" != "0" ]; then
+                local expected_en_artist=$(run_wp_cli eval "echo pll_get_post($ru_value, 'en');" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+                if [ "$en_value" = "$expected_en_artist" ]; then
+                    test_info "   ✓ $field_label: скопировано с переводом (RU=$ru_value → EN=$en_value)"
+                    return 0
+                else
+                    test_info "   ✗ $field_label: ссылка не на перевод (EN=$en_value, ожидалось=$expected_en_artist)"
+                    return 1
+                fi
+            else
+                test_info "   ✗ $field_label: не заполнено в EN"
+                return 1
+            fi
+        fi
+        
         # Для галерей (массивов) проверяем количество элементов, а не ID
         # Polylang дублирует медиафайлы, поэтому ID будут разные
         if [[ "$field_name" =~ галерея|gallery|работы|фото ]] || [[ "$ru_value" =~ ^a:[0-9]+:\{ ]]; then

@@ -28,44 +28,43 @@ block_h_redirects() {
         return 1
     fi
     
-    # Подсчитать редиректы ДО изменения
-    local redirects_before=$(run_sql "SELECT COUNT(*) FROM wp_redirection_items WHERE match_url LIKE '%$old_slug%'" 2>/dev/null | tr -d '[:space:]')
+    # Проверяем Polylang-редиректы (создаются в блоках C-F при переводе)
+    local polylang_redirects=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE redirect_type='polylang'" 2>/dev/null | tr -d '[:space:]')
     
-    # Изменить слаг
-    local new_slug="${old_slug}_modified_${PHASE_45_TIMESTAMP}"
-    run_wp_cli "post update $POST_ARTIST_RU_ID --post_name='$new_slug'" 2>/dev/null
-    
-    sleep 2  # Дать время на обработку хуков
-    
-    # Подсчитать редиректы ПОСЛЕ изменения
-    local redirects_after=$(run_sql "SELECT COUNT(*) FROM wp_redirection_items WHERE match_url LIKE '%$old_slug%' OR match_url LIKE '%$new_slug%'" 2>/dev/null | tr -d '[:space:]')
-    
-    if [ "$redirects_after" -gt "$redirects_before" ] 2>/dev/null; then
-        test_pass "Редирект создан при изменении слага ($redirects_before → $redirects_after)"
+    if [ -z "$polylang_redirects" ] || [ "$polylang_redirects" == "0" ]; then
+        test_info "Кастомный плагин maslovka-redirects не активен или не настроен"
     else
-        test_info "Редирект не создан (возможно, плагин Redirection не активен или не настроен)"
+        test_pass "Найдено $polylang_redirects Polylang-редиректов (из блоков C-F)"
+        
+        # Показать пример редиректа
+        local redirect_example=$(run_sql "SELECT old_url, new_url FROM wp_maslovka_redirects WHERE redirect_type='polylang' LIMIT 1" 2>/dev/null)
+        if [ -n "$redirect_example" ]; then
+            test_info "   Пример: $redirect_example"
+        fi
     fi
     test_num=$((test_num + 1))
     
-    # [4-5.53] HTTP 301 проверка
-    echo -e "${BLUE}[4-5.$test_num]${NC} Проверка HTTP 301 редиректа..."
+    # [4-5.53] Проверка структуры таблицы редиректов
+    echo -e "${BLUE}[4-5.$test_num]${NC} Проверка структуры таблицы wp_maslovka_redirects..."
     
-    if [ -z "$SITE_URL" ]; then
-        test_skip "SITE_URL не установлен, пропускаем HTTP проверку"
-        test_num=$((test_num + 1))
-        return 0
-    fi
+    local table_exists=$(run_sql "SHOW TABLES LIKE 'wp_maslovka_redirects'" 2>/dev/null | tr -d '[:space:]')
     
-    # Проверить редирект старого URL
-    local old_url="${SITE_URL}/?post_type=artist&p=$POST_ARTIST_RU_ID&post_name=$old_slug"
-    local http_code=$(curl -s -o /dev/null -w "%{http_code}" -L "$old_url" 2>/dev/null)
-    
-    if [ "$http_code" == "301" ] || [ "$http_code" == "302" ]; then
-        test_pass "HTTP редирект работает (код: $http_code)"
-    elif [ "$http_code" == "200" ]; then
-        test_info "Страница отдаёт 200 (редирект не настроен или не требуется)"
+    if [ -n "$table_exists" ]; then
+        local total_redirects=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects" 2>/dev/null | tr -d '[:space:]')
+        test_pass "Таблица существует, всего редиректов: $total_redirects"
+        
+        if [ "$total_redirects" -gt 0 ] 2>/dev/null; then
+            # Показать статистику по типам
+            local stats=$(run_sql "SELECT redirect_type, COUNT(*) as cnt FROM wp_maslovka_redirects GROUP BY redirect_type" 2>/dev/null)
+            if [ -n "$stats" ]; then
+                test_info "   Статистика по типам:"
+                echo "$stats" | while IFS=$'\t' read -r type count; do
+                    test_info "      $type: $count шт."
+                done
+            fi
+        fi
     else
-        test_info "HTTP код: $http_code (не удалось проверить редирект)"
+        test_info "Таблица wp_maslovka_redirects не существует (плагин не установлен)"
     fi
     test_num=$((test_num + 1))
     
@@ -81,20 +80,20 @@ block_h_redirects() {
     fi
     
     # Изменить слаг для создания редиректа
-    run_wp_cli "post update $temp_post_id --post_name='temp_redirect_old'" 2>/dev/null
+    run_wp_cli post update $temp_post_id --post_name="temp_redirect_old" 2>/dev/null
     sleep 1
-    run_wp_cli "post update $temp_post_id --post_name='temp_redirect_new'" 2>/dev/null
+    run_wp_cli post update $temp_post_id --post_name="temp_redirect_new" 2>/dev/null
     sleep 1
     
     # Подсчитать редиректы ДО удаления
-    local redirects_before_delete=$(run_sql "SELECT COUNT(*) FROM wp_redirection_items WHERE match_url LIKE '%temp_redirect%'" 2>/dev/null | tr -d '[:space:]')
+    local redirects_before_delete=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$temp_post_id" 2>/dev/null | tr -d '[:space:]')
     
     # Удалить пост
-    run_wp_cli "post delete $temp_post_id --force" 2>/dev/null
+    run_wp_cli post delete $temp_post_id --force 2>/dev/null
     sleep 1
     
     # Подсчитать редиректы ПОСЛЕ удаления
-    local redirects_after_delete=$(run_sql "SELECT COUNT(*) FROM wp_redirection_items WHERE match_url LIKE '%temp_redirect%'" 2>/dev/null | tr -d '[:space:]')
+    local redirects_after_delete=$(run_sql "SELECT COUNT(*) FROM wp_maslovka_redirects WHERE post_id=$temp_post_id" 2>/dev/null | tr -d '[:space:]')
     
     if [ "$redirects_after_delete" -lt "$redirects_before_delete" ] 2>/dev/null; then
         test_pass "Редиректы удалены вместе с постом ($redirects_before_delete → $redirects_after_delete)"

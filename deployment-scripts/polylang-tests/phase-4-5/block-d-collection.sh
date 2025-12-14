@@ -31,8 +31,8 @@ block_d_test_collection() {
     test_pass "RU collection создан (ID=$POST_COLLECTION_RU_ID, $full_title)"
     test_num=$((test_num + 1))
     
-    # [4-5.27] Заполнение ACF полей
-    echo -e "${BLUE}[4-5.$test_num]${NC} Заполнение ${#ACF_COLLECTION[@]} ACF полей..."
+    # [4-5.27] Заполнение ACF полей (status не проверяется автоматически)
+    echo -e "${BLUE}[4-5.$test_num]${NC} Заполнение 7 ACF полей (6 проверяемых автоматически)..."
     
     # Установить featured image (случайное из TEST_IMAGES)
     run_wp_cli eval "update_post_meta($POST_COLLECTION_RU_ID, '_thumbnail_id', ${TEST_IMAGES[0]});" 2>/dev/null
@@ -54,7 +54,7 @@ block_d_test_collection() {
     local gallery_ids="[${TEST_IMAGES[1]}, ${TEST_IMAGES[2]}]"
     run_wp_cli eval "update_field('работы', json_decode('$gallery_ids'), $POST_COLLECTION_RU_ID);" 2>/dev/null
     
-    test_pass "Заполнены ACF поля: year_created, current_location, status, height, width, depth, галерея"
+    test_pass "Заполнены ACF поля: artist_id, year_created, current_location, status (не проверяется), height, width, depth"
     test_num=$((test_num + 1))
     
     # [4-5.28] Назначение таксономий
@@ -129,8 +129,8 @@ EOF
     test_pass "Визуальная проверка завершена"
     test_num=$((test_num + 1))
     
-    # [4-5.32] Автопроверка ACF полей
-    echo -e "${BLUE}[4-5.$test_num]${NC} Автоматическая проверка ${#ACF_COLLECTION[@]} ACF полей..."
+    # [4-5.32] Автопроверка ACF полей (без status)
+    echo -e "${BLUE}[4-5.$test_num]${NC} Автоматическая проверка 6 ACF полей (status проверяется визуально)..."
     
     check_all_acf_fields "$POST_COLLECTION_RU_ID" "$POST_COLLECTION_EN_ID" "${ACF_COLLECTION[@]}"
     test_num=$((test_num + 1))

@@ -87,7 +87,7 @@ block_a_preparation() {
     echo ""
     echo -e "${CYAN}   ACF поля:${NC}"
     echo -e "   • artist:     ${#ACF_ARTIST[@]} полей"
-    echo -e "   • collection: ${#ACF_COLLECTION[@]} полей"
+    echo -e "   • collection: ${#ACF_COLLECTION[@]} полей (+ status визуально)"
     echo -e "   • events:     ${#ACF_EVENTS[@]} полей"
     echo -e "   • vistavki:   ${#ACF_VISTAVKI[@]} полей"
     

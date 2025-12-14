@@ -53,10 +53,10 @@ phase_4_5_tests() {
     block_f_test_vistavki
     
     # Блок G: Полнота переводов таксономий
-    # block_g_taxonomy_coverage
+    block_g_taxonomy_coverage
     
     # Блок H: Редиректы
-    # block_h_redirects
+    block_h_redirects
     
     # Блок I: Очистка
     block_i_cleanup
