@@ -1,8 +1,25 @@
 #!/bin/bash
 # 🚀 Deploy to DEV
 # Быстрый деплой на dev окружение
+#
+# Флаги:
+#   --skip-migrations    Деплой без миграций (для первого запуска перед ручной настройкой Polylang)
 
 set -e
+
+# Парсинг аргументов
+SKIP_MIGRATIONS=false
+
+for arg in "$@"; do
+    case $arg in
+        --skip-migrations)
+            SKIP_MIGRATIONS=true
+            shift
+            ;;
+        *)
+            ;;
+    esac
+done
 
 # Загрузка конфигурации
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +39,12 @@ echo -e "${BLUE}╔════════════════════�
 echo -e "${BLUE}║      DEV DEPLOYMENT - dev.your-domain.com          ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
 echo ""
+
+# Показываем активные флаги
+if [ "$SKIP_MIGRATIONS" = true ]; then
+    echo -e "${YELLOW}⚠️  Mode: Deployment WITHOUT migrations${NC}"
+    echo ""
+fi
 
 # ============================================
 # Проверка: Первый ли это деплой?
@@ -174,13 +197,20 @@ echo ""
 # ============================================
 # STEP 4: Run Migrations (if any)
 # ============================================
-echo -e "${BLUE}═══ STEP 4/5: Running Migrations ═══${NC}"
-echo ""
-
-"${SCRIPT_DIR}/database/db-migrate.sh" apply dev
-
-echo -e "${GREEN}✓${NC} Migrations checked"
-echo ""
+if [ "$SKIP_MIGRATIONS" = true ]; then
+    echo -e "${BLUE}═══ STEP 4/5: Migrations (SKIPPED) ═══${NC}"
+    echo ""
+    echo -e "${YELLOW}⊘${NC} Migrations skipped as requested"
+    echo ""
+else
+    echo -e "${BLUE}═══ STEP 4/5: Running Migrations ═══${NC}"
+    echo ""
+    
+    "${SCRIPT_DIR}/database/db-migrate.sh" apply dev
+    
+    echo -e "${GREEN}✓${NC} Migrations checked"
+    echo ""
+fi
 
 # ============================================
 # STEP 5: Clear Cache

@@ -1015,35 +1015,55 @@ cd www/deployment-scripts
 
 ### Фаза 8: Деплой на PROD - 1 час
 
-**8.1. Финальный деплой**
+**8.1. Первый деплой (БЕЗ миграций)**
 
 ```bash
-# Используем скрипт деплоя:
+# Деплой кода без миграций БД
 cd www/deployment-scripts
-./deploy-prod.sh
+./deploy-prod.sh --skip-migrations
 
 # Скрипт автоматически:
 # ✅ Создаст бэкап БД перед деплоем
 # ✅ Сделает git pull на PROD сервере
 # ✅ Обновит файлы темы
-# ✅ Применит миграции БД
-# ✅ Запустит smoke tests
-# ✅ Отправит уведомление о результате
+# ⊘ Пропустит миграции БД
+# ✅ Очистит кеш
 ```
 
-**8.2. Ручные действия после деплоя**
+**8.2. Ручные действия после первого деплоя**
 
 ```bash
 # 1. Установить Polylang вручную:
 # WordPress Admin → Plugins → Upload polylang.zip → Activate
 
-# 2. Активировать кастомные плагины:
-# WordPress Admin → Plugins → Activate
-# - Maslovka Polylang Redirects
-# - Maslovka Polylang Duplicator
+# 2. Настроить языки (Settings → Languages):
+#    - Russian (ru_RU) - default
+#    - English (en_US) - /en/
 
-# 3. Flush permalinks:
-# Settings → Permalinks → Save Changes
+# 3. Создать меню:
+#    - Header Menu (RU) - назначить на "Header"
+#    - Footer Menu (RU) - назначить на "Footer"
+#    - Header Menu EN - назначить на "Header (English)"
+#    - Footer Menu EN - назначить на "Footer (English)"
+
+# 4. Активировать кастомные плагины:
+#    - Maslovka Polylang Redirects
+#    - Maslovka Polylang Duplicator
+
+# 5. Flush permalinks:
+#    Settings → Permalinks → Save Changes
+```
+
+**8.3. Второй деплой (С миграциями)**
+
+```bash
+# Применить миграции БД
+./deploy-prod.sh
+
+# Миграции автоматически:
+# ✅ Создадут EN меню (024_polylang_menus_en.sql)
+# ✅ Проверят переводы пунктов меню (026_polylang_translate_menu_items.php)
+# ✅ Запустят smoke tests
 ```
 
 **8.3. Проверка**

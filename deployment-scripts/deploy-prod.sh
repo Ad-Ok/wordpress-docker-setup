@@ -1,8 +1,31 @@
 #!/bin/bash
 # 🚀 Deploy to PRODUCTION
 # Релизный деплой с полным циклом проверок
+#
+# Флаги:
+#   --dry-run            Режим симуляции без реальных изменений
+#   --skip-migrations    Деплой без миграций (для первого запуска перед ручной настройкой Polylang)
 
 set -e
+
+# Парсинг аргументов
+SKIP_MIGRATIONS=false
+DRY_RUN_MODE="${DRY_RUN:-false}"
+
+for arg in "$@"; do
+    case $arg in
+        --skip-migrations)
+            SKIP_MIGRATIONS=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN_MODE="true"
+            shift
+            ;;
+        *)
+            ;;
+    esac
+done
 
 # Загрузка конфигурации
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,21 +41,19 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Проверка dry-run режима
-DRY_RUN_MODE="${DRY_RUN:-false}"
-if [ "$1" == "--dry-run" ]; then
-    DRY_RUN_MODE="true"
-fi
-
 echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║      PRODUCTION DEPLOYMENT - your-domain.com       ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
+# Показываем активные флаги
 if [ "$DRY_RUN_MODE" == "true" ]; then
     echo -e "${YELLOW}🧪 DRY RUN MODE - No actual changes will be made${NC}"
-    echo ""
 fi
+if [ "$SKIP_MIGRATIONS" = true ]; then
+    echo -e "${YELLOW}⚠️  Mode: Deployment WITHOUT migrations${NC}"
+fi
+[ "$DRY_RUN_MODE" == "true" ] || [ "$SKIP_MIGRATIONS" = true ] && echo ""
 
 # ============================================
 # Проверка: Первый ли это деплой?
@@ -275,18 +296,25 @@ echo ""
 # ============================================
 # STEP 7: Run Database Migrations
 # ============================================
-echo -e "${BLUE}═══ STEP 7/10: Running Database Migrations ═══${NC}"
-echo ""
-
-if [ "$AUTO_RUN_MIGRATIONS" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
+if [ "$SKIP_MIGRATIONS" = true ]; then
+    echo -e "${BLUE}═══ STEP 7/10: Migrations (SKIPPED) ═══${NC}"
+    echo ""
+    echo -e "${YELLOW}⊘${NC} Migrations skipped as requested"
+    echo ""
+elif [ "$AUTO_RUN_MIGRATIONS" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
+    echo -e "${BLUE}═══ STEP 7/10: Running Database Migrations ═══${NC}"
+    echo ""
+    
     "${SCRIPT_DIR}/database/db-migrate.sh" apply prod
     
     echo -e "${GREEN}✓${NC} Migrations checked"
+    echo ""
 else
+    echo -e "${BLUE}═══ STEP 7/10: Migrations (SKIPPED) ═══${NC}"
+    echo ""
     echo -e "${YELLOW}ℹ️  Skipping migrations${NC}"
+    echo ""
 fi
-
-echo ""
 
 # ============================================
 # STEP 8: Clear Cache

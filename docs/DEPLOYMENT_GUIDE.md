@@ -96,6 +96,9 @@
 - Быстро и эффективно
 - Автоматический rollback при ошибках
 
+**Флаги:**
+- `--skip-migrations` — деплой без миграций (для плагинов с ручной настройкой)
+
 **Команды:**
 ```bash
 # PROD (с полными проверками)
@@ -104,8 +107,25 @@
 # DEV (быстрый деплой)
 ./deployment-scripts/deploy-dev.sh
 
+# DEV без миграций (для Polylang, WooCommerce и др.)
+./deployment-scripts/deploy-dev.sh --skip-migrations
+
 # Dry-run (без реальных изменений)
 ./deployment-scripts/deploy-prod.sh --dry-run
+```
+
+**Процесс деплоя с ручной настройкой (Polylang):**
+```bash
+# 1. Деплой БЕЗ миграций
+./deploy-dev.sh --skip-migrations
+
+# 2. Ручная настройка:
+#    - Активируйте плагин Polylang в wp-admin
+#    - Создайте языки (RU, EN)
+#    - Создайте меню (Header, Footer)
+
+# 3. Деплой С миграциями
+./deploy-dev.sh
 ```
 
 ---
