@@ -314,6 +314,7 @@ apply_migration_local() {
         
         # Запускаем PHP-миграцию внутри контейнера
         docker exec -i "${LOCAL_PHP_CONTAINER:-wordpress_php}" \
+            env WP_LOAD_PATH="/var/www/html/wp-load.php" \
             php "/var/www/html/database/migrations/${migration_file}" 2>&1 | sed 's/^/   /'
     else
         # SQL миграция - запускаем через MySQL
@@ -328,15 +329,15 @@ apply_migration_local() {
             -p"${LOCAL_DB_PASS}" \
             "${LOCAL_DB_NAME}" \
             < "$migration_path" 2>&1 | sed 's/^/   /'
-    fi
-    
-    if [ ${PIPESTATUS[0]} -eq 0 ]; then
-        echo -e "   ${GREEN}✓${NC} Миграция применена"
-        mark_migration_applied "$migration_file" "local"
-        return 0
-    else
-        echo -e "   ${RED}✗${NC} Ошибка при применении миграции"
-        return 1
+        
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo -e "   ${GREEN}✓${NC} Миграция применена"
+            mark_migration_applied "$migration_file" "local"
+            return 0
+        else
+            echo -e "   ${RED}✗${NC} Ошибка при применении миграции"
+            return 1
+        fi
     fi
 }
 
@@ -389,8 +390,8 @@ apply_migration_remote() {
             return 1
         fi
         
-        # Запускаем через php
-        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_WP_PATH} && php ${remote_migration_path}" 2>&1 | sed 's/^/   /'
+        # Запускаем через php с переменной окружения WP_LOAD_PATH
+        ssh "${SSH_USER}@${SSH_HOST}" "cd ${REMOTE_WP_PATH} && WP_LOAD_PATH=${REMOTE_WP_PATH}/wp-load.php php ${remote_migration_path}" 2>&1 | sed 's/^/   /'
         result=${PIPESTATUS[0]}
     else
         # SQL миграция - отправляем и применяем
