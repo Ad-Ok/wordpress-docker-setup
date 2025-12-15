@@ -316,6 +316,15 @@ apply_migration_local() {
         docker exec -i "${LOCAL_PHP_CONTAINER:-wordpress_php}" \
             env WP_LOAD_PATH="/var/www/html/wp-load.php" \
             php "/var/www/html/database/migrations/${migration_file}" 2>&1 | sed 's/^/   /'
+        
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo -e "   ${GREEN}✓${NC} Миграция применена"
+            mark_migration_applied "$migration_file" "local"
+            return 0
+        else
+            echo -e "   ${RED}✗${NC} Ошибка при применении миграции"
+            return 1
+        fi
     else
         # SQL миграция - запускаем через MySQL
         if ! docker ps | grep -q "${LOCAL_DB_CONTAINER}"; then
