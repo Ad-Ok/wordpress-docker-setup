@@ -1,4 +1,38 @@
-# 📊 Database Analysis - Quick Reference
+# 🗄️ Database Management - Quick Reference
+
+---
+
+## 🔄 Синхронизация БД
+
+### Загрузить с удаленного сервера на локальную
+
+```bash
+# С продакшена
+./db-sync.sh pull prod
+
+# С дева
+./db-sync.sh pull dev
+```
+
+### ⭐ Синхронизировать между серверами
+
+```bash
+# Обновить DEV из PROD (частый сценарий)
+./db-sync.sh sync prod dev
+
+# Обновить PROD из DEV (осторожно!)
+./db-sync.sh sync dev prod
+```
+
+### Отправить на продакшен (Initial Deploy)
+
+```bash
+./db-sync.sh push prod
+```
+
+---
+
+## 📊 Database Analysis - Quick Reference
 
 ## Запуск анализа
 

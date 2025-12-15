@@ -27,15 +27,17 @@ show_usage() {
 ${BLUE}🔄 Database Sync${NC}
 
 ${YELLOW}Использование:${NC}
-  ./db-sync.sh <operation> <environment>
+  ./db-sync.sh <operation> <source> [target]
 
 ${YELLOW}Операции:${NC}
   ${GREEN}pull${NC}   - Загрузить БД с удаленного сервера (REMOTE → LOCAL)
   ${GREEN}push${NC}   - Отправить БД на удаленный сервер (LOCAL → REMOTE)
+  ${GREEN}sync${NC}   - Синхронизировать между серверами (REMOTE → REMOTE)
 
 ${YELLOW}Окружения:${NC}
   ${CYAN}prod${NC}   - Production сервер
   ${CYAN}dev${NC}    - Development сервер
+  ${CYAN}local${NC}  - Локальная среда (Docker)
 
 ${YELLOW}Примеры:${NC}
   # Загрузить БД с продакшена на локалку
@@ -47,16 +49,23 @@ ${YELLOW}Примеры:${NC}
   # Отправить локальную БД на продакшен (для initial deploy)
   ./db-sync.sh push prod
 
+  ${MAGENTA}# Синхронизировать PROD → DEV${NC}
+  ./db-sync.sh sync prod dev
+
+  ${MAGENTA}# Синхронизировать DEV → PROD${NC}
+  ./db-sync.sh sync dev prod
+
 ${YELLOW}Что делает:${NC}
   1. Создает backup текущей БД (на всякий случай)
   2. Экспортирует/импортирует базу данных
   3. Автоматически заменяет домены (search-replace)
   4. Очищает кэш и permalinks
-  5. Сохраняет snapshot для отката
+  5. Сохраняет snapshot для отката (для local)
 
 ${YELLOW}ВНИМАНИЕ:${NC}
   - PULL заменит вашу локальную БД
   - PUSH заменит удаленную БД (используйте осторожно!)
+  - SYNC заменит БД на целевом сервере (требует подтверждения!)
 
 EOF
 }
@@ -339,6 +348,194 @@ ENDSSH
     echo -e "   2. Если нужно откатиться, используйте backup на сервере"
 }
 
+# SYNC: Синхронизировать БД между удаленными серверами
+sync_database() {
+    local source_env="$1"
+    local target_env="$2"
+    
+    # Проверка аргументов
+    if [ -z "$target_env" ]; then
+        echo -e "${RED}✗ Не указано целевое окружение${NC}"
+        echo -e "Использование: ${CYAN}./db-sync.sh sync <source> <target>${NC}"
+        exit 1
+    fi
+    
+    # Проверка, что окружения разные
+    if [ "$source_env" == "$target_env" ]; then
+        echo -e "${RED}✗ Источник и цель не могут быть одинаковыми${NC}"
+        exit 1
+    fi
+    
+    # Получить параметры источника
+    local SOURCE_SSH_USER SOURCE_SSH_HOST SOURCE_WP_PATH SOURCE_URL SOURCE_WP_CLI
+    case "$source_env" in
+        prod)
+            SOURCE_SSH_USER="$PROD_SSH_USER"
+            SOURCE_SSH_HOST="$PROD_SSH_HOST"
+            SOURCE_WP_PATH="$PROD_WP_PATH"
+            SOURCE_URL="$PROD_SITE_URL"
+            SOURCE_WP_CLI="$PROD_WP_CLI"
+            ;;
+        dev)
+            SOURCE_SSH_USER="$DEV_SSH_USER"
+            SOURCE_SSH_HOST="$DEV_SSH_HOST"
+            SOURCE_WP_PATH="$DEV_WP_PATH"
+            SOURCE_URL="$DEV_SITE_URL"
+            SOURCE_WP_CLI="$DEV_WP_CLI"
+            ;;
+        *)
+            echo -e "${RED}✗ Неизвестное окружение источника: $source_env${NC}"
+            exit 1
+            ;;
+    esac
+    
+    # Получить параметры цели
+    local TARGET_SSH_USER TARGET_SSH_HOST TARGET_WP_PATH TARGET_URL TARGET_WP_CLI
+    case "$target_env" in
+        prod)
+            TARGET_SSH_USER="$PROD_SSH_USER"
+            TARGET_SSH_HOST="$PROD_SSH_HOST"
+            TARGET_WP_PATH="$PROD_WP_PATH"
+            TARGET_URL="$PROD_SITE_URL"
+            TARGET_WP_CLI="$PROD_WP_CLI"
+            ;;
+        dev)
+            TARGET_SSH_USER="$DEV_SSH_USER"
+            TARGET_SSH_HOST="$DEV_SSH_HOST"
+            TARGET_WP_PATH="$DEV_WP_PATH"
+            TARGET_URL="$DEV_SITE_URL"
+            TARGET_WP_CLI="$DEV_WP_CLI"
+            ;;
+        *)
+            echo -e "${RED}✗ Неизвестное окружение цели: $target_env${NC}"
+            exit 1
+            ;;
+    esac
+    
+    local SOURCE_UPPER=$(echo "$source_env" | tr '[:lower:]' '[:upper:]')
+    local TARGET_UPPER=$(echo "$target_env" | tr '[:lower:]' '[:upper:]')
+    
+    echo -e "${BLUE}🔄 Синхронизация БД: ${SOURCE_UPPER} → ${TARGET_UPPER}${NC}\n"
+    echo -e "   От:  ${CYAN}${SOURCE_URL}${NC}"
+    echo -e "   К:   ${MAGENTA}${TARGET_URL}${NC}"
+    echo ""
+    
+    # Предупреждение
+    if [ "$target_env" == "prod" ]; then
+        echo -e "${RED}╔════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  ⚠️  КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ ⚠️                 ║${NC}"
+        echo -e "${RED}║                                                    ║${NC}"
+        echo -e "${RED}║  Вы собираетесь ЗАМЕНИТЬ базу данных ПРОДАКШЕНА!  ║${NC}"
+        echo -e "${RED}║  Все данные будут ПОТЕРЯНЫ!                        ║${NC}"
+        echo -e "${RED}╚════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        read -p "Введите 'REPLACE DATABASE' для подтверждения: " confirm
+        
+        if [ "$confirm" != "REPLACE DATABASE" ]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            exit 0
+        fi
+    else
+        echo -e "${YELLOW}⚠️  ВНИМАНИЕ: База данных ${TARGET_UPPER} будет ЗАМЕНЕНА!${NC}"
+        read -p "Продолжить? (yes/no): " confirm
+        
+        if [ "$confirm" != "yes" ]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            exit 0
+        fi
+    fi
+    
+    # 1. Создать backup на целевом сервере
+    echo -e "\n${BLUE}[1/5]${NC} ${CYAN}Создаю backup на ${TARGET_UPPER}...${NC}"
+    
+    ssh "${TARGET_SSH_USER}@${TARGET_SSH_HOST}" << ENDSSH
+cd ${TARGET_WP_PATH}
+mkdir -p ../backups
+${TARGET_WP_CLI} db export ../backups/backup-before-sync-from-${source_env}-\$(date +%Y%m%d_%H%M%S).sql.gz 2>/dev/null
+ENDSSH
+    
+    if [ $? -eq 0 ]; then
+        echo -e "   ${GREEN}✓${NC} Backup создан на ${TARGET_UPPER}"
+    else
+        echo -e "   ${YELLOW}⚠️${NC} Не удалось создать backup (продолжаю...)"
+    fi
+    
+    # 2. Экспортировать БД с источника
+    echo -e "\n${BLUE}[2/5]${NC} ${CYAN}Экспортирую БД с ${SOURCE_UPPER}...${NC}"
+    
+    local temp_dump="/tmp/db-sync-${source_env}-to-${target_env}-$(date +%Y%m%d_%H%M%S).sql.gz"
+    
+    ssh "${SOURCE_SSH_USER}@${SOURCE_SSH_HOST}" << ENDSSH | gzip > "${temp_dump}"
+cd ${SOURCE_WP_PATH}
+${SOURCE_WP_CLI} db export - 2>/dev/null
+ENDSSH
+    
+    if [ $? -eq 0 ]; then
+        local size=$(du -h "${temp_dump}" | cut -f1)
+        echo -e "   ${GREEN}✓${NC} БД экспортирована (${size})"
+    else
+        echo -e "   ${RED}✗${NC} Ошибка при экспорте БД"
+        rm -f "${temp_dump}"
+        exit 1
+    fi
+    
+    # 3. Импортировать БД на целевой сервер
+    echo -e "\n${BLUE}[3/5]${NC} ${CYAN}Импортирую БД на ${TARGET_UPPER}...${NC}"
+    
+    gunzip -c "${temp_dump}" | \
+        sed 's/DEFINER=[^ ]*//g' | \
+        ssh "${TARGET_SSH_USER}@${TARGET_SSH_HOST}" \
+        "cd ${TARGET_WP_PATH} && ${TARGET_WP_CLI} db import - 2>/dev/null"
+    
+    if [ $? -eq 0 ]; then
+        echo -e "   ${GREEN}✓${NC} БД импортирована"
+    else
+        echo -e "   ${RED}✗${NC} Ошибка при импорте БД"
+        rm -f "${temp_dump}"
+        exit 1
+    fi
+    
+    # Удалить временный файл
+    rm -f "${temp_dump}"
+    
+    # 4. Заменить домены на целевом сервере
+    echo -e "\n${BLUE}[4/5]${NC} ${CYAN}Замена доменов на ${TARGET_UPPER}...${NC}"
+    
+    ssh "${TARGET_SSH_USER}@${TARGET_SSH_HOST}" << ENDSSH
+cd ${TARGET_WP_PATH}
+${TARGET_WP_CLI} search-replace \
+    "${SOURCE_URL}" \
+    "${TARGET_URL}" \
+    --precise \
+    --recurse-objects \
+    --all-tables \
+    --skip-columns=guid \
+    2>/dev/null
+ENDSSH
+    
+    if [ $? -eq 0 ]; then
+        echo -e "   ${GREEN}✓${NC} Домены заменены"
+    else
+        echo -e "   ${YELLOW}⚠️${NC} Ошибка при замене доменов (проверьте вручную)"
+    fi
+    
+    # 5. Очистить кэш на целевом сервере
+    echo -e "\n${BLUE}[5/5]${NC} ${CYAN}Очистка кэша на ${TARGET_UPPER}...${NC}"
+    
+    ssh "${TARGET_SSH_USER}@${TARGET_SSH_HOST}" << ENDSSH
+cd ${TARGET_WP_PATH}
+${TARGET_WP_CLI} cache flush 2>/dev/null || true
+${TARGET_WP_CLI} rewrite flush 2>/dev/null || true
+ENDSSH
+    
+    echo -e "   ${GREEN}✓${NC} Кэш очищен"
+    
+    echo -e "\n${GREEN}✅ БД успешно синхронизирована: ${SOURCE_UPPER} → ${TARGET_UPPER}!${NC}"
+    echo -e "\n${CYAN}Что дальше:${NC}"
+    echo -e "   1. Проверьте сайт: ${TARGET_URL}"
+    echo -e "   2. Backup доступен на ${TARGET_UPPER} в директории ../backups/"
+}
+
 # ============================================
 # MAIN
 # ============================================
@@ -347,17 +544,36 @@ OPERATION="$1"
 ENVIRONMENT="$2"
 
 # Проверка аргументов
-if [ -z "$OPERATION" ] || [ -z "$ENVIRONMENT" ]; then
+if [ -z "$OPERATION" ]; then
     show_usage
     exit 1
 fi
 
 case "$OPERATION" in
     pull)
+        if [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}✗ Не указано окружение${NC}"
+            show_usage
+            exit 1
+        fi
         pull_database "$ENVIRONMENT"
         ;;
     push)
+        if [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}✗ Не указано окружение${NC}"
+            show_usage
+            exit 1
+        fi
         push_database "$ENVIRONMENT"
+        ;;
+    sync)
+        TARGET_ENV="$3"
+        if [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}✗ Не указано окружение источника${NC}"
+            show_usage
+            exit 1
+        fi
+        sync_database "$ENVIRONMENT" "$TARGET_ENV"
         ;;
     help|--help|-h)
         show_usage
