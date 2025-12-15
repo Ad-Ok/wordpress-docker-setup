@@ -1,22 +1,26 @@
 #!/bin/bash
 # 📤 Upload Synchronization Script
-# Безопасная синхронизация wp-content/uploads на сервер
+# Безопасная синхронизация wp-content/uploads между локалкой и сервером
 # Использует rsync для надёжной передачи больших объёмов данных
 #
 # Особенности:
 # - Инкрементальная синхронизация (передаются только новые/изменённые файлы)
 # - Поддержка resume при обрыве соединения
 # - Фильтрация системных/временных файлов
-# - Защита от удаления файлов на сервере
+# - Защита от удаления файлов
 # - Отчёты о прогрессе
 # - Dry-run режим для проверки
 #
 # Использование:
-#   ./sync-uploads.sh [prod|dev] [--dry-run] [--delete]
+#   ./sync-uploads.sh [prod|dev] [push|pull] [--dry-run] [--delete]
+#
+# Направления:
+#   push        Загрузить файлы на сервер (LOCAL → REMOTE)
+#   pull        Скачать файлы с сервера (REMOTE → LOCAL)
 #
 # Опции:
 #   --dry-run   Показать что будет синхронизировано без реальной передачи
-#   --delete    Удалить файлы на сервере, которых нет локально (осторожно!)
+#   --delete    Удалить файлы в целевой директории, которых нет в источнике (осторожно!)
 
 set -e
 
@@ -35,6 +39,7 @@ NC='\033[0m' # No Color
 
 # Определяем среду (prod или dev)
 ENVIRONMENT=""
+DIRECTION=""
 DRY_RUN=false
 DELETE_MODE=false
 LONG_NAME_FILES=""
@@ -46,6 +51,9 @@ for arg in "$@"; do
         prod|dev)
             ENVIRONMENT="$arg"
             ;;
+        push|pull)
+            DIRECTION="$arg"
+            ;;
         --dry-run)
             DRY_RUN=true
             ;;
@@ -54,7 +62,7 @@ for arg in "$@"; do
             ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 [prod|dev] [--dry-run] [--delete]"
+            echo "Usage: $0 [prod|dev] [push|pull] [--dry-run] [--delete]"
             exit 1
             ;;
     esac
@@ -70,6 +78,20 @@ if [ -z "$ENVIRONMENT" ]; then
     case $ENV_CHOICE in
         1) ENVIRONMENT="dev" ;;
         2) ENVIRONMENT="prod" ;;
+        *) echo "Invalid choice"; exit 1 ;;
+    esac
+fi
+
+# Если направление не указано, спрашиваем
+if [ -z "$DIRECTION" ]; then
+    echo -e "${YELLOW}Select direction:${NC}"
+    echo "  1) push - Upload to server (LOCAL → REMOTE)"
+    echo "  2) pull - Download from server (REMOTE → LOCAL)"
+    read -p "Enter choice (1-2): " -r DIR_CHOICE
+    
+    case $DIR_CHOICE in
+        1) DIRECTION="push" ;;
+        2) DIRECTION="pull" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 fi
@@ -90,12 +112,22 @@ fi
 
 # Uppercase для вывода
 ENV_UPPER=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+DIR_ARROW=""
+DIR_DESC=""
+
+if [ "$DIRECTION" == "push" ]; then
+    DIR_ARROW="LOCAL → ${ENV_UPPER}"
+    DIR_DESC="Upload to server"
+else
+    DIR_ARROW="${ENV_UPPER} → LOCAL"
+    DIR_DESC="Download from server"
+fi
 
 # ============================================
 # HEADER
 # ============================================
 echo -e "${CYAN}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║         UPLOADS SYNC - ${ENV_UPPER}                       ║${NC}"
+echo -e "${CYAN}║         UPLOADS SYNC - ${DIR_ARROW}                    ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -138,75 +170,57 @@ if [ ${LARGE_FILES} -gt 0 ]; then
     echo ""
 fi
 
-# Проверяем проблемные имена файлов
-echo "Checking for problematic filenames..."
-PROBLEM_COUNT=0
+# Проверяем проблемные имена файлов (только при push - при pull не критично)
+if [ "$DIRECTION" == "push" ]; then
+    echo "Checking for problematic filenames..."
+    PROBLEM_COUNT=0
 
-# Файлы с пробелами
-SPACE_FILES=$(find "${UPLOADS_DIR_LOCAL}" -name "* *" -type f | wc -l | tr -d ' ')
-if [ ${SPACE_FILES} -gt 0 ]; then
-    echo -e "${YELLOW}  ⚠ ${SPACE_FILES} files with spaces in names${NC}"
-    PROBLEM_COUNT=$((PROBLEM_COUNT + SPACE_FILES))
-fi
-
-# Файлы с кириллицей/спецсимволами
-NON_ASCII=$(find "${UPLOADS_DIR_LOCAL}" -type f -exec sh -c 'basename "$1" | LC_ALL=C grep -q "[^[:print:]]"' _ {} \; -print | wc -l | tr -d ' ')
-if [ ${NON_ASCII} -gt 0 ]; then
-    echo -e "${YELLOW}  ⚠ ${NON_ASCII} files with non-ASCII characters (cyrillic, etc)${NC}"
-    PROBLEM_COUNT=$((PROBLEM_COUNT + NON_ASCII))
-fi
-
-# Файлы с очень длинными именами (>200 БАЙТ в basename)
-# NAME_MAX на сервере = 255 байт, используем 200 байт как безопасный порог
-# Кириллица занимает ~2 байта на символ в UTF-8
-echo "  Checking for files with extremely long names..."
-LONG_NAME_FILES=$(mktemp)
-
-# Поиск файлов с длинными именами (проверяем БАЙТЫ, не символы!)
-UPLOADS_DIR_LOCAL="${UPLOADS_DIR_LOCAL}" python3 << 'PYSCRIPT' > "${LONG_NAME_FILES}"
-import os
-import sys
-
-uploads_dir = os.environ.get('UPLOADS_DIR_LOCAL')
-max_bytes = 200
-
-for root, dirs, files in os.walk(uploads_dir):
-    for fname in files:
-        byte_len = len(fname.encode('utf-8'))
-        if byte_len > max_bytes:
-            full_path = os.path.join(root, fname)
-            print(full_path)
-PYSCRIPT
-
-# Считаем количество найденных файлов
-LONG_COUNT=$(cat "${LONG_NAME_FILES}" | wc -l | tr -d ' ')
-LONG_COUNT=${LONG_COUNT:-0}
-
-if [ ${LONG_COUNT} -gt 0 ]; then
-    echo -e "${YELLOW}  ⚠ ${LONG_COUNT} files with extremely long names (>200 bytes)${NC}"
-    echo -e "${YELLOW}    These files will be SKIPPED during sync (filesystem limitation)${NC}"
-    PROBLEM_COUNT=$((PROBLEM_COUNT + LONG_COUNT))
-    
-    if [ ${LONG_COUNT} -le 20 ]; then
-        echo "    Files that will be skipped:"
-        head -10 "${LONG_NAME_FILES}" | while IFS= read -r file; do
-            filename=$(basename "$file")
-            byte_len=$(printf "%s" "$filename" | wc -c | tr -d ' ')
-            # Показываем только первые 80 символов имени
-            echo "      - ${filename:0:80}... [${byte_len} bytes]"
-        done
-    else
-        echo "    Showing first 10 of ${LONG_COUNT} files:"
-        head -10 "${LONG_NAME_FILES}" | while IFS= read -r file; do
-            filename=$(basename "$file")
-            byte_len=$(printf "%s" "$filename" | wc -c | tr -d ' ')
-            echo "      - ${filename:0:80}... [${byte_len} bytes]"
-        done
+    # Файлы с пробелами
+    SPACE_FILES=$(find "${UPLOADS_DIR_LOCAL}" -name "* *" -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ ${SPACE_FILES} -gt 0 ]; then
+        echo -e "${YELLOW}  ⚠ ${SPACE_FILES} files with spaces in names${NC}"
+        PROBLEM_COUNT=$((PROBLEM_COUNT + SPACE_FILES))
     fi
-fi
 
-if [ ${PROBLEM_COUNT} -gt 0 ]; then
-    echo -e "${YELLOW}  Note: Files with long names will be skipped. You can re-upload them via WordPress admin.${NC}"
+    # Файлы с кириллицей/спецсимволами (быстрая проверка)
+    NON_ASCII=$(find "${UPLOADS_DIR_LOCAL}" -type f 2>/dev/null | head -1000 | xargs -I {} basename {} | LC_ALL=C grep -c "[^[:print:]]" 2>/dev/null || echo 0)
+    if [ ${NON_ASCII} -gt 0 ]; then
+        echo -e "${YELLOW}  ⚠ Files with non-ASCII characters detected (checked sample)${NC}"
+    fi
+
+    # Файлы с очень длинными именами (упрощенная проверка через find)
+    echo "  Checking for files with extremely long names..."
+    LONG_NAME_FILES=$(mktemp)
+    
+    # Быстрая проверка через find (проверяем только имя файла, не полный путь)
+    find "${UPLOADS_DIR_LOCAL}" -type f 2>/dev/null | while IFS= read -r file; do
+        filename=$(basename "$file")
+        byte_len=$(printf "%s" "$filename" | wc -c | tr -d ' ')
+        if [ "$byte_len" -gt 200 ]; then
+            echo "$file" >> "${LONG_NAME_FILES}"
+        fi
+    done &
+    
+    # Ждем максимум 5 секунд
+    sleep 5
+    pkill -P $$ find 2>/dev/null || true
+    
+    LONG_COUNT=$(cat "${LONG_NAME_FILES}" 2>/dev/null | wc -l | tr -d ' ')
+    LONG_COUNT=${LONG_COUNT:-0}
+
+    if [ ${LONG_COUNT} -gt 0 ]; then
+        echo -e "${YELLOW}  ⚠ ${LONG_COUNT} files with extremely long names (>200 bytes)${NC}"
+        echo -e "${YELLOW}    These files will be SKIPPED during sync${NC}"
+    fi
+
+    if [ ${PROBLEM_COUNT} -gt 0 ] || [ ${LONG_COUNT} -gt 0 ]; then
+        echo -e "${YELLOW}  Note: Problematic files will be handled by rsync${NC}"
+    fi
+else
+    # При pull просто создаем пустой файл
+    LONG_NAME_FILES=$(mktemp)
+    LONG_COUNT=0
+    echo "Skipping filename checks for pull operation..."
 fi
 
 echo -e "${GREEN}✓${NC} Local environment check passed"
@@ -361,12 +375,23 @@ if [ "$DELETE_MODE" = true ]; then
     RSYNC_OPTS+=(--delete-excluded)
 fi
 
+# Определяем source и target в зависимости от направления
+if [ "$DIRECTION" == "push" ]; then
+    SYNC_SOURCE="${UPLOADS_DIR_LOCAL}/"
+    SYNC_TARGET="${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
+else
+    # pull - скачиваем с сервера
+    SYNC_SOURCE="${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
+    SYNC_TARGET="${UPLOADS_DIR_LOCAL}/"
+fi
+
 # Информация о синхронизации
 echo "Sync configuration:"
-echo "  Source: ${UPLOADS_DIR_LOCAL}/"
-echo "  Target: ${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/"
+echo "  Direction: ${DIR_DESC} (${DIR_ARROW})"
+echo "  Source: ${SYNC_SOURCE}"
+echo "  Target: ${SYNC_TARGET}"
 echo "  Mode: $([ "$DRY_RUN" = true ] && echo "DRY RUN" || echo "LIVE SYNC")"
-echo "  Delete: $([ "$DELETE_MODE" = true ] && echo "YES (files on server will be removed if not in source)" || echo "NO (files on server will be preserved)")"
+echo "  Delete: $([ "$DELETE_MODE" = true ] && echo "YES (files in target will be removed if not in source)" || echo "NO (files in target will be preserved)")"
 echo ""
 
 if [ "$DRY_RUN" != true ]; then
@@ -380,8 +405,8 @@ START_TIME=$(date +%s)
 RSYNC_EXIT_CODE=0
 
 rsync "${RSYNC_OPTS[@]}" \
-    "${UPLOADS_DIR_LOCAL}/" \
-    "${SSH_USER}@${SSH_HOST}:${WEBROOT}/wp-content/uploads/" || RSYNC_EXIT_CODE=$?
+    "${SYNC_SOURCE}" \
+    "${SYNC_TARGET}" || RSYNC_EXIT_CODE=$?
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
@@ -412,13 +437,16 @@ if [ $RSYNC_EXIT_CODE -eq 0 ] || [ $RSYNC_EXIT_CODE -eq 23 ] || [ $RSYNC_EXIT_CO
         
         echo ""
         
-        # Устанавливаем правильные права доступа на сервере
-        echo "Setting file permissions..."
-        ssh "${SSH_USER}@${SSH_HOST}" "find '${WEBROOT}/wp-content/uploads' -type d -exec chmod 755 {} \; && find '${WEBROOT}/wp-content/uploads' -type f -exec chmod 644 {} \;" 2>/dev/null || true
-        echo -e "${GREEN}✓${NC} Permissions set"
-        echo ""
-        
-        echo "All uploads have been synced to the server."
+        # Устанавливаем правильные права доступа на сервере (только при push)
+        if [ "$DIRECTION" == "push" ]; then
+            echo "Setting file permissions..."
+            ssh "${SSH_USER}@${SSH_HOST}" "find '${WEBROOT}/wp-content/uploads' -type d -exec chmod 755 {} \; && find '${WEBROOT}/wp-content/uploads' -type f -exec chmod 644 {} \;" 2>/dev/null || true
+            echo -e "${GREEN}✓${NC} Permissions set"
+            echo ""
+            echo "All uploads have been synced to the server."
+        else
+            echo "All uploads have been downloaded from the server."
+        fi
     fi
 else
     echo ""

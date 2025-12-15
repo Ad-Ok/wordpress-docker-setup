@@ -127,9 +127,17 @@ pull_database() {
     
     local temp_dump="/tmp/db-sync-${environment}-$(date +%Y%m%d_%H%M%S).sql.gz"
     
+    # Определяем путь к WP-CLI для окружения
+    local REMOTE_WP_CLI=""
+    if [ "$environment" == "prod" ]; then
+        REMOTE_WP_CLI="${PROD_WP_CLI}"
+    else
+        REMOTE_WP_CLI="${DEV_WP_CLI}"
+    fi
+    
     ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH | gzip > "${temp_dump}"
 cd ${REMOTE_WP_PATH}
-wp db export - 2>/dev/null
+${REMOTE_WP_CLI} db export - 2>/dev/null
 ENDSSH
     
     if [ $? -eq 0 ]; then
@@ -144,7 +152,10 @@ ENDSSH
     # 3. Импортировать БД в локальный Docker
     echo -e "\n${BLUE}[3/5]${NC} ${CYAN}Импортирую БД в локальный Docker...${NC}"
     
-    gunzip -c "${temp_dump}" | docker exec -i "${LOCAL_DB_CONTAINER}" \
+    # Фильтруем DEFINER для совместимости с локальным MySQL
+    gunzip -c "${temp_dump}" | \
+        sed 's/DEFINER=[^ ]*//g' | \
+        docker exec -i "${LOCAL_DB_CONTAINER}" \
         mysql \
         -u"${LOCAL_DB_USER}" \
         -p"${LOCAL_DB_PASS}" \

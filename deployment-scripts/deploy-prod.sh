@@ -327,21 +327,15 @@ if [ "$AUTO_CLEAR_CACHE" == "true" ] && [ "$DRY_RUN_MODE" != "true" ]; then
 cd ${PROD_WP_PATH}
 
 # Очистка WP Super Cache (если установлен)
-if [ -d "wp-content/cache" ]; then
-    echo "Clearing WP Super Cache..."
-    rm -rf wp-content/cache/*
-    echo "✓ Cache directory cleared"
-fi
+echo "Flushing WordPress cache..."
+${PROD_WP_CLI} cache flush
 
-# Очистка кеша через PHP скрипт (для функций WordPress)
-php -r "
-define('WP_USE_THEMES', false);
-require_once('wp-load.php');
-if (function_exists('wp_cache_flush')) {
-    wp_cache_flush();
-    echo 'WordPress cache flushed\n';
-}
-"
+echo "Flushing rewrite rules..."
+${PROD_WP_CLI} rewrite flush
+
+# Очистка кеша плагинов (если активны)
+${PROD_WP_CLI} plugin is-active wp-super-cache 2>/dev/null && ${PROD_WP_CLI} super-cache flush || true
+${PROD_WP_CLI} plugin is-active w3-total-cache 2>/dev/null && ${PROD_WP_CLI} w3-total-cache flush || true
 
 echo "✓ Cache cleared"
 ENDSSH
