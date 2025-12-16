@@ -156,6 +156,7 @@ setup_environment() {
             DB_PORT="$LOCAL_DB_PORT"
             DB_CONTAINER="$LOCAL_DB_CONTAINER"
             WP_PATH="$LOCAL_WP_PATH"
+            WP_CLI_PATH="wp"  # В Docker используется просто wp
             IS_LOCAL=true
             ;;
         dev)
@@ -168,6 +169,7 @@ setup_environment() {
             SSH_HOST="$DEV_SSH_HOST"
             SSH_PORT="$DEV_SSH_PORT"
             WP_PATH="$DEV_WP_PATH"
+            WP_CLI_PATH="$DEV_WP_CLI"
             IS_LOCAL=false
             ;;
         prod)
@@ -180,6 +182,7 @@ setup_environment() {
             SSH_HOST="$PROD_SSH_HOST"
             SSH_PORT="$PROD_SSH_PORT"
             WP_PATH="$PROD_WP_PATH"
+            WP_CLI_PATH="$PROD_WP_CLI"
             IS_LOCAL=false
             ;;
     esac

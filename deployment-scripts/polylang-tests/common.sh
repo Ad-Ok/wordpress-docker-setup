@@ -63,7 +63,7 @@ run_wp_cli() {
         done
         # Подавляем stderr полностью чтобы игнорировать PHP deprecated warnings
         ssh -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
-            "cd '$WP_PATH' && /home/a1182962/bin/wp $cmd 2>/dev/null"
+            "cd '$WP_PATH' && $WP_CLI_PATH $cmd 2>/dev/null"
     fi
 }
 
