@@ -166,7 +166,8 @@ phase_6_tests() {
     
     # 6.5.1 Проверка html lang атрибута на RU странице
     echo "[6.5.1] Проверка атрибута html lang на RU странице..."
-    if echo "$homepage_ru" | grep -qE '<html[^>]*lang="ru'; then
+    local html_tag=$(echo "$homepage_ru" | grep -o '<html[^>]*>' | head -1)
+    if echo "$html_tag" | grep -q 'lang="ru'; then
         test_pass "html lang=\"ru\" установлен корректно"
     else
         test_fail "html lang=\"ru\" не найден на RU странице"

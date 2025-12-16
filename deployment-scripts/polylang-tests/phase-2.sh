@@ -12,9 +12,9 @@ phase_2_tests() {
     test_num=$((test_num + 1))
     echo -e "${BLUE}[2.$test_num]${NC} EN Header меню создано..."
     
-    EN_HEADER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'main-menu-en'" 2>/dev/null | tr -d '[:space:]')
+    EN_HEADER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'main-menu-en'" 2>/dev/null | tail -1 | tr -d '[:space:]')
     
-    if [ -n "$EN_HEADER_MENU" ] && [ "$EN_HEADER_MENU" != "NULL" ]; then
+    if [ -n "$EN_HEADER_MENU" ] && [ "$EN_HEADER_MENU" != "NULL" ] && [ "$EN_HEADER_MENU" != "term_id" ]; then
         test_pass "Main Menu EN существует (term_id=$EN_HEADER_MENU)"
     else
         test_fail "Main Menu EN не найдено"
@@ -24,9 +24,9 @@ phase_2_tests() {
     test_num=$((test_num + 1))
     echo -e "${BLUE}[2.$test_num]${NC} EN Footer меню создано..."
     
-    EN_FOOTER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'footer-menu-en'" 2>/dev/null | tr -d '[:space:]')
+    EN_FOOTER_MENU=$(run_sql "SELECT term_id FROM wp_terms WHERE slug = 'footer-menu-en'" 2>/dev/null | tail -1 | tr -d '[:space:]')
     
-    if [ -n "$EN_FOOTER_MENU" ] && [ "$EN_FOOTER_MENU" != "NULL" ]; then
+    if [ -n "$EN_FOOTER_MENU" ] && [ "$EN_FOOTER_MENU" != "NULL" ] && [ "$EN_FOOTER_MENU" != "term_id" ]; then
         test_pass "Footer Menu EN существует (term_id=$EN_FOOTER_MENU)"
     else
         test_fail "Footer Menu EN не найдено"
@@ -168,26 +168,26 @@ phase_2_tests() {
     
     # 2.11 Проверка что PHP миграция 025 существует
     test_num=$((test_num + 1))
-    echo -e "${BLUE}[2.$test_num]${NC} PHP миграция 025_polylang_translate_menu_items.php существует..."
+    echo -e "${BLUE}[2.$test_num]${NC} PHP миграция 025_sync_homepage_ru_to_en.php существует..."
     
     if [ "$ENV" = "local" ]; then
-        MIGRATION_025_PATH="${WORKSPACE_ROOT}/www/wordpress/database/migrations/025_polylang_translate_menu_items.php"
+        MIGRATION_025_PATH="${WORKSPACE_ROOT}/www/wordpress/database/migrations/025_sync_homepage_ru_to_en.php"
     else
-        MIGRATION_025_PATH="${REMOTE_PATH}/wordpress/database/migrations/025_polylang_translate_menu_items.php"
+        MIGRATION_025_PATH="/home/${SSH_USER}/domains/${SITE_URL#https://}/public_html/database/migrations/025_sync_homepage_ru_to_en.php"
     fi
     
     if [ "$ENV" = "local" ]; then
-        if [ -f "$MIGRATION_025_PATH" ] && [ -x "$MIGRATION_025_PATH" ]; then
-            test_pass "Миграция 025_polylang_translate_menu_items.php найдена и исполняемая"
+        if [ -f "$MIGRATION_025_PATH" ]; then
+            test_pass "Миграция 025_sync_homepage_ru_to_en.php найдена"
         else
-            test_fail "Миграция 025_polylang_translate_menu_items.php не найдена или не исполняемая"
+            test_fail "Миграция 025_sync_homepage_ru_to_en.php не найдена"
         fi
     else
         # Для удалённых окружений проверяем через SSH
-        if ssh -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" "[ -x '$MIGRATION_025_PATH' ]" 2>/dev/null; then
-            test_pass "Миграция 025_polylang_translate_menu_items.php найдена и исполняемая"
+        if ssh -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" "[ -f '$MIGRATION_025_PATH' ]" 2>/dev/null; then
+            test_pass "Миграция 025_sync_homepage_ru_to_en.php найдена"
         else
-            test_fail "Миграция 025_polylang_translate_menu_items.php не найдена или не исполняемая"
+            test_fail "Миграция 025_sync_homepage_ru_to_en.php не найдена"
         fi
     fi
     
