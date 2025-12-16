@@ -19,7 +19,7 @@ block_e_test_events() {
     local full_title="${title}_${PHASE_45_TIMESTAMP}"
     local content="Описание тестового события для проверки копирования контента и информационных блоков."
     
-    POST_EVENTS_RU_ID=$(run_wp_cli post create --post_type=events --post_title="$full_title" --post_content="$content" --post_status=publish --porcelain 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    POST_EVENTS_RU_ID=$(run_wp_cli post create --post_type=events --post_title="$full_title" --post_content="$content" --post_status=publish --porcelain)
     
     if [ -z "$POST_EVENTS_RU_ID" ] || [ "$POST_EVENTS_RU_ID" == "0" ]; then
         test_fail "Не удалось создать RU events"

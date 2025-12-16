@@ -36,20 +36,21 @@ phase_0_checks() {
         
         if run_wp_cli "--version" > /dev/null 2>&1; then
             test_pass "WP-CLI доступен"
-            WP_CLI_AVAILABLE=true
+            export WP_CLI_AVAILABLE=true
         else
             test_info "WP-CLI недоступен, будет использоваться SQL"
-            WP_CLI_AVAILABLE=false
+            export WP_CLI_AVAILABLE=false
         fi
     else
         echo -e "${BLUE}[0.2]${NC} WP-CLI пропущен (--force-sql)"
-        WP_CLI_AVAILABLE=false
+        export WP_CLI_AVAILABLE=false
     fi
     
     # 0.3 Проверка доступности БД
     echo -e "${BLUE}[0.3]${NC} Проверка доступности базы данных..."
     
-    if run_sql "SELECT 1" > /dev/null 2>&1; then
+    local db_result=$(run_sql "SELECT 1" 2>&1)
+    if echo "$db_result" | grep -q "1"; then
         test_pass "База данных доступна"
     else
         test_fail "База данных недоступна"

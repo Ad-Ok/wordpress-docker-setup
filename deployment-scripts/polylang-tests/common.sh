@@ -55,10 +55,15 @@ run_wp_cli() {
         docker compose -f "${LOCAL_PROJECT_ROOT}/docker-compose.yml" exec -T php \
             wp "$@" --allow-root 2>/dev/null
     else
-        # Для DEV/PROD - через SSH (объединяем все аргументы в строку)
-        local cmd="$*"
+        # Для DEV/PROD - через SSH
+        # Используем printf %q для правильного экранирования каждого аргумента
+        local cmd=""
+        for arg in "$@"; do
+            cmd="$cmd $(printf '%q' "$arg")"
+        done
+        # Подавляем stderr полностью чтобы игнорировать PHP deprecated warnings
         ssh -o ConnectTimeout=10 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
-            "cd '$WP_PATH' && wp $cmd" 2>/dev/null
+            "cd '$WP_PATH' && /home/a1182962/bin/wp $cmd 2>/dev/null"
     fi
 }
 

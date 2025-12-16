@@ -18,7 +18,7 @@ block_d_test_collection() {
     local title=$(get_random_from_array "${TEST_COLLECTION_TITLES[@]}")
     local full_title="${title}_${PHASE_45_TIMESTAMP}"
     
-    POST_COLLECTION_RU_ID=$(run_wp_cli post create --post_type=collection --post_title="$full_title" --post_status=publish --porcelain 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    POST_COLLECTION_RU_ID=$(run_wp_cli post create --post_type=collection --post_title="$full_title" --post_status=publish --porcelain)
     
     if [ -z "$POST_COLLECTION_RU_ID" ] || [ "$POST_COLLECTION_RU_ID" == "0" ]; then
         test_fail "Не удалось создать RU collection"

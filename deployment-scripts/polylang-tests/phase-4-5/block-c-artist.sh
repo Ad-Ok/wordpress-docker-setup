@@ -22,7 +22,7 @@ block_c_test_artist() {
     local content="Биография тестового художника ${first_name} ${patronymic}. Это автоматически созданный пост для тестирования функционала Polylang и копирования ACF полей."
     local excerpt="Краткое описание тестового художника для превью."
     
-    POST_ARTIST_RU_ID=$(run_wp_cli post create --post_type=artist --post_title="$title" --post_content="$content" --post_excerpt="$excerpt" --post_status=publish --porcelain 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    POST_ARTIST_RU_ID=$(run_wp_cli post create --post_type=artist --post_title="$title" --post_content="$content" --post_excerpt="$excerpt" --post_status=publish --porcelain)
     
     if [ -z "$POST_ARTIST_RU_ID" ] || [ "$POST_ARTIST_RU_ID" == "0" ]; then
         test_fail "Не удалось создать RU artist"

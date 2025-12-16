@@ -275,8 +275,7 @@ main() {
     should_run_phase 1 && phase_1_tests
     should_run_phase 2 && phase_2_tests
     should_run_phase 3 && phase_3_tests
-    should_run_phase 4 && phase_4_5_tests
-    should_run_phase 5 && phase_4_5_tests
+    (should_run_phase 4 || should_run_phase 5) && phase_4_5_tests
     should_run_phase 6 && phase_6_tests
     
     # Вывод результатов

@@ -11,16 +11,17 @@ block_b_create_terms() {
     echo ""
     
     local test_num=5
+    local timestamp=$(date +%s)
     
     for taxonomy in "${ALL_TAXONOMIES[@]}"; do
         echo -e "${BLUE}[4-5.$test_num]${NC} Создание термина $taxonomy..."
         
-        local ru_name="$(get_test_term_ru $taxonomy)"
-        local en_name="$(get_test_term_en $taxonomy)"
+        local ru_name="$(get_test_term_ru $taxonomy)_${timestamp}"
+        local en_name="$(get_test_term_en $taxonomy)_${timestamp}"
         
         # Создать термины (оба будут с языком RU по умолчанию)
-        local ru_id=$(run_wp_cli term create "$taxonomy" "$ru_name" --porcelain 2>&1 | grep -oE '[0-9]+' | head -1)
-        local en_id=$(run_wp_cli term create "$taxonomy" "$en_name" --porcelain 2>&1 | grep -oE '[0-9]+' | head -1)
+        local ru_id=$(run_wp_cli term create "$taxonomy" "$ru_name" --porcelain)
+        local en_id=$(run_wp_cli term create "$taxonomy" "$en_name" --porcelain)
         
         if [ -z "$ru_id" ] || [ "$ru_id" == "0" ] || [ -z "$en_id" ] || [ "$en_id" == "0" ]; then
             test_fail "Не удалось создать термины $taxonomy"
@@ -59,7 +60,7 @@ block_b_create_terms() {
         fi
         
         # Проверить связь через Polylang API
-        local en_linked=$(run_wp_cli eval "echo pll_get_term($ru_id, 'en');" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+        local en_linked=$(run_wp_cli eval "echo pll_get_term($ru_id, 'en');")
         
         if [ "$en_linked" == "$en_id" ]; then
             links_ok=$((links_ok + 1))
