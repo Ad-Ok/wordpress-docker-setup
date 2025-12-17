@@ -107,25 +107,28 @@
 # DEV (быстрый деплой)
 ./deployment-scripts/deploy-dev.sh
 
-# DEV без миграций (для Polylang, WooCommerce и др.)
+# Деплой без миграций (для DEV и PROD)
 ./deployment-scripts/deploy-dev.sh --skip-migrations
+./deployment-scripts/deploy-prod.sh --skip-migrations
 
-# Dry-run (без реальных изменений)
+# Dry-run на PROD (без реальных изменений)
 ./deployment-scripts/deploy-prod.sh --dry-run
 ```
 
-**Процесс деплоя с ручной настройкой (Polylang):**
+**Процесс деплоя с ручной настройкой (Polylang, WooCommerce и др.):**
 ```bash
-# 1. Деплой БЕЗ миграций
+# 1. Деплой БЕЗ миграций (для DEV или PROD)
 ./deploy-dev.sh --skip-migrations
+./deploy-prod.sh --skip-migrations
 
-# 2. Ручная настройка:
-#    - Активируйте плагин Polylang в wp-admin
-#    - Создайте языки (RU, EN)
-#    - Создайте меню (Header, Footer)
+# 2. Ручная настройка в WordPress Admin:
+#    - Активируйте плагин (например, Polylang)
+#    - Создайте необходимые настройки (языки, меню, категории)
+#    - Проверьте работу плагина
 
-# 3. Деплой С миграциями
+# 3. Деплой С миграциями (применит зависимые миграции БД)
 ./deploy-dev.sh
+./deploy-prod.sh
 ```
 
 ---
