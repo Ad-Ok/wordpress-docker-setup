@@ -9,9 +9,9 @@
 PROD_SSH_USER="your_ssh_user"
 PROD_SSH_HOST="your_server_ip"
 PROD_SSH_PORT="22"
-PROD_WEBROOT="/home/your_user/your-domain.com"
+PROD_WEBROOT="/home/your_user/domains/your-domain.com/public_html"
 PROD_BACKUP_DIR="/home/your_user/backups"
-PROD_WP_PATH="/home/your_user/your-domain.com"
+PROD_WP_PATH="/home/your_user/domains/your-domain.com/public_html"
 
 # База данных PROD
 PROD_DB_NAME="your_db_name"
@@ -25,15 +25,18 @@ PROD_GIT_BRANCH="main"
 # URL сайта PROD
 PROD_SITE_URL="https://your-domain.com"
 
+# WP-CLI на PROD
+PROD_WP_CLI="/home/your_user/bin/wp"
+
 # ============================================
 # DEV SERVER (dev.your-domain.com)
 # ============================================
 DEV_SSH_USER="your_ssh_user"
 DEV_SSH_HOST="your_server_ip"
 DEV_SSH_PORT="22"
-DEV_WEBROOT="/home/your_user/dev.your-domain.com"
+DEV_WEBROOT="/home/your_user/domains/dev.your-domain.com/public_html"
 DEV_BACKUP_DIR="/home/your_user/backups-dev"
-DEV_WP_PATH="/home/your_user/dev.your-domain.com"
+DEV_WP_PATH="/home/your_user/domains/dev.your-domain.com/public_html"
 
 # База данных DEV
 DEV_DB_NAME="your_dev_db_name"
@@ -47,37 +50,54 @@ DEV_GIT_BRANCH="dev"
 # URL сайта DEV
 DEV_SITE_URL="https://dev.your-domain.com"
 
+# WP-CLI на DEV
+DEV_WP_CLI="/home/your_user/bin/wp"
+
 # ============================================
 # ЛОКАЛЬНЫЕ ПУТИ
 # ============================================
 LOCAL_PROJECT_ROOT="/path/to/your/project/www"
 LOCAL_THEME_PATH="${LOCAL_PROJECT_ROOT}/wordpress/wp-content/themes/your-theme"
-LOCAL_BACKUP_DIR="${LOCAL_PROJECT_ROOT}/../backups"
+LOCAL_BACKUP_DIR="${LOCAL_PROJECT_ROOT}/backups"
 
 # ============================================
-# УВЕДОМЛЕНИЯ
+# ЛОКАЛЬНАЯ БАЗА ДАННЫХ (Docker)
 # ============================================
-# Telegram
-TELEGRAM_BOT_TOKEN="your_bot_token_here"
-TELEGRAM_CHAT_ID="your_chat_id_here"
-TELEGRAM_ENABLED="false"  # true/false
+LOCAL_DB_NAME="wordpress_db"
+LOCAL_DB_USER="wordpress_user"
+LOCAL_DB_PASS="wordpress_password"
+LOCAL_DB_HOST="localhost"
+LOCAL_DB_PORT="3306"
+LOCAL_DB_CONTAINER="wordpress_mysql"
 
-# Email
-EMAIL_TO="admin@your-domain.com"
-EMAIL_FROM="deploy@your-domain.com"
-EMAIL_ENABLED="false"  # true/false
+# URL локального сайта
+LOCAL_SITE_URL="https://localhost"
 
-# Slack (опционально)
-SLACK_WEBHOOK_URL=""
-SLACK_ENABLED="false"
+# Путь к WordPress внутри Docker контейнера
+LOCAL_WP_PATH="/var/www/html"
+
+# ============================================
+# НАСТРОЙКИ SNAPSHOTS
+# ============================================
+LOCAL_SNAPSHOT_DIR="${LOCAL_BACKUP_DIR}/snapshots"
+SNAPSHOT_KEEP_COUNT="3"  # Сколько snapshots хранить для каждой ветки
+SNAPSHOT_AUTO_SWITCH="true"  # Автопереключение БД при git checkout
+
+# ============================================
+# НАСТРОЙКИ МИГРАЦИЙ
+# ============================================
+# Путь к директории с SQL миграциями (в сабмодуле wordpress)
+LOCAL_MIGRATIONS_DIR="${LOCAL_PROJECT_ROOT}/wordpress/database/migrations"
+PROD_MIGRATIONS_DIR="${PROD_WP_PATH}/database/migrations"
+DEV_MIGRATIONS_DIR="${DEV_WP_PATH}/database/migrations"
+
+# Автоматический запуск миграций при деплое
+AUTO_RUN_MIGRATIONS="true"
 
 # ============================================
 # НАСТРОЙКИ БЭКАПОВ
 # ============================================
-# Сколько бэкапов хранить
 BACKUP_KEEP_COUNT="10"
-
-# Создавать бэкап перед каждым деплоем
 BACKUP_BEFORE_DEPLOY="true"
 
 # ============================================
@@ -99,27 +119,17 @@ SMOKE_TEST_TIMEOUT="10"
 # ============================================
 # ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ
 # ============================================
-# Режим обслуживания (maintenance mode)
-MAINTENANCE_MODE_ENABLED="true"
-
-# Запускать миграции автоматически
-AUTO_RUN_MIGRATIONS="true"
-
-# Очищать кеш после деплоя
-AUTO_CLEAR_CACHE="true"
-
 # Требовать подтверждение перед PROD деплоем
 REQUIRE_CONFIRMATION="true"
 
-# Режим dry-run по умолчанию (для тестирования)
-DRY_RUN="false"
+# Автоматическая очистка кеша после деплоя
+AUTO_CLEAR_CACHE="true"
 
-# ============================================
-# ПУТИ КЭШИРОВАНИЯ WP SUPER CACHE
-# ============================================
-PROD_WP_SUPER_CACHE_PATH="/home/your_user/your-domain.com/wp-content/plugins/wp-super-cache/"
-DEV_WP_SUPER_CACHE_PATH="/home/your_user/dev.your-domain.com/wp-content/plugins/wp-super-cache/"
-LOCAL_WP_SUPER_CACHE_PATH="/var/www/html/wp-content/plugins/wp-super-cache/"
+# Включить режим обслуживания при деплое на PROD
+MAINTENANCE_MODE_ENABLED="false"
+
+# Режим отладки
+DEBUG_MODE="false"
 
 # ============================================
 # НАСТРОЙКИ ОТЛАДКИ WORDPRESS
@@ -135,3 +145,10 @@ DEV_WP_DEBUG_DISPLAY="true"
 LOCAL_WP_DEBUG="true"
 LOCAL_WP_DEBUG_LOG="true"
 LOCAL_WP_DEBUG_DISPLAY="false"
+
+# ============================================
+# ПУТИ КЭШИРОВАНИЯ WP SUPER CACHE
+# ============================================
+PROD_WP_SUPER_CACHE_PATH="/home/your_user/domains/your-domain.com/public_html/wp-content/plugins/wp-super-cache/"
+DEV_WP_SUPER_CACHE_PATH="/home/your_user/domains/dev.your-domain.com/public_html/wp-content/plugins/wp-super-cache/"
+LOCAL_WP_SUPER_CACHE_PATH="/var/www/html/wp-content/plugins/wp-super-cache/"

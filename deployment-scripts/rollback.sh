@@ -208,7 +208,6 @@ wp rewrite flush
 
 # Кеш плагины
 wp plugin is-active wp-super-cache 2>/dev/null && wp super-cache flush
-wp plugin is-active w3-total-cache 2>/dev/null && wp w3-total-cache flush
 ENDSSH
 
 echo -e "${GREEN}✓${NC} Cache cleared"

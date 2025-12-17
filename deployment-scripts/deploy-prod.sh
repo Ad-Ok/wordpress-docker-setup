@@ -335,7 +335,6 @@ ${PROD_WP_CLI} rewrite flush
 
 # Очистка кеша плагинов (если активны)
 ${PROD_WP_CLI} plugin is-active wp-super-cache 2>/dev/null && ${PROD_WP_CLI} super-cache flush || true
-${PROD_WP_CLI} plugin is-active w3-total-cache 2>/dev/null && ${PROD_WP_CLI} w3-total-cache flush || true
 
 echo "✓ Cache cleared"
 ENDSSH

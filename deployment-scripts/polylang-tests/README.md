@@ -129,7 +129,7 @@ php 026_polylang_translate_menu_items.php --env=local --interactive
 
 **Поддержка окружений:**
 - **local**: Docker Compose (автоматически открывает `https://localhost/wp-admin/...`)
-- **dev**: SSH на `dev.maslovka.org.xsph.ru` (автоматически открывает dev URL)
+- **dev**: SSH на `dev.maslovka.org` (автоматически открывает dev URL)
 - **prod**: SSH на `maslovka.org` (автоматически открывает prod URL)
 
 ---
