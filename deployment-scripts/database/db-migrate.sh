@@ -405,7 +405,7 @@ apply_migration_remote() {
     else
         # SQL миграция - отправляем и применяем
         cat "$migration_path" | ssh "${SSH_USER}@${SSH_HOST}" \
-            "mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
+            "mysql -h localhost -u${DB_USER} -p${DB_PASS} ${DB_NAME}" 2>&1 | sed 's/^/   /'
         result=${PIPESTATUS[1]}
     fi
     
