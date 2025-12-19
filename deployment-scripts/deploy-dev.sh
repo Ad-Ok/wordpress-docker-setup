@@ -83,20 +83,36 @@ fi
 # ============================================
 # STEP 0: Version Bump & Build
 # ============================================
-echo -e "${BLUE}═══ STEP 0/5: Version Bump ═══${NC}"
+echo -e "${BLUE}═══ STEP 0/5: Version Bump & Build ═══${NC}"
 echo ""
 
 # Увеличиваем версию темы
-version_bump
+NEW_VERSION=$(bump_version)
 
 if [ $? -ne 0 ]; then
     echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
 fi
 
 echo ""
+echo -e "${BLUE}Building theme assets...${NC}"
+
+# Переходим в директорию темы для билда
+THEME_DIR="${SCRIPT_DIR}/../wordpress/wp-content/themes/maslovka"
+cd "${THEME_DIR}"
+
+# Запускаем production билд
+npm run build:dev
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓${NC} Theme build complete"
+else
+    echo -e "${YELLOW}⚠️  Theme build failed, but continuing...${NC}"
+fi
+
+echo ""
 
 # ============================================
-# STEP 1: Git Status Check
+# STEP 1: Git Status Check & Auto-Commit
 # ============================================
 echo -e "${BLUE}═══ STEP 1/5: Checking Git Status ═══${NC}"
 echo ""
@@ -115,6 +131,35 @@ if [ "$CURRENT_BRANCH" != "dev" ]; then
         exit 0
     fi
 fi
+
+# Откатываем артефакты webpack (пустые файлы style.css и style.js)
+echo -e "${BLUE}Resetting webpack artifacts...${NC}"
+git checkout wp-content/themes/maslovka/assets/css/style.css 2>/dev/null || true
+git checkout wp-content/themes/maslovka/assets/js/style.js 2>/dev/null || true
+echo -e "${GREEN}✓${NC} Webpack artifacts reset"
+
+echo ""
+
+# Проверяем, есть ли изменения после билда (только для DEV)
+if git diff --quiet && git diff --cached --quiet; then
+    echo -e "  No changes detected after build"
+else
+    echo -e "${BLUE}Committing build artifacts...${NC}"
+    
+    # Добавляем только реальные скомпилированные файлы
+    git add wp-content/themes/maslovka/assets/js/main.js
+    git add wp-content/themes/maslovka/style.css  # версия темы
+    
+    # Проверяем, есть ли что коммитить
+    if ! git diff --cached --quiet; then
+        git commit -m "build: version ${NEW_VERSION} [dev auto-build]"
+        echo -e "${GREEN}✓${NC} Build artifacts committed"
+    else
+        echo -e "  No build artifacts to commit"
+    fi
+fi
+
+echo ""
 
 # Проверка, что изменения запушены
 git fetch origin

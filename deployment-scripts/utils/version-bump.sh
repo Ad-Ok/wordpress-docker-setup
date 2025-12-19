@@ -83,19 +83,22 @@ bump_version() {
 
 ##
 # Основная функция для вызова из других скриптов
+# Возвращает новую версию через echo в конце для захвата в переменную
 ##
 version_bump() {
-    echo -e "${BLUE}═══ Version Bump ═══${NC}"
-    echo ""
+    echo -e "${BLUE}═══ Version Bump ═══${NC}" >&2
+    echo "" >&2
     
-    local new_version=$(bump_version)
+    local new_version=$(bump_version 2>&1)
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    echo ""
-    echo -e "${GREEN}✓ Version bump complete${NC}"
-    echo -e "${BLUE}New version: ${new_version}${NC}"
+    echo "" >&2
+    echo -e "${GREEN}✓ Version bump complete${NC}" >&2
+    echo -e "${BLUE}New version: ${new_version}${NC}" >&2
     
+    # Возвращаем версию для захвата в переменную
+    echo "${new_version}"
     return 0
 }
