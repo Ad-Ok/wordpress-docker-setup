@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyMCE Icons - Maslovka</title>
+    <style>
+        @font-face {
+            font-family: 'tinymce';
+            src: url('../wordpress/wp-includes/js/tinymce/skins/lightgray/fonts/tinymce.eot');
+            src: url('../wordpress/wp-includes/js/tinymce/skins/lightgray/fonts/tinymce.eot?#iefix') format('embedded-opentype'),
+                 url('../wordpress/wp-includes/js/tinymce/skins/lightgray/fonts/tinymce.woff') format('woff'),
+                 url('../wordpress/wp-includes/js/tinymce/skins/lightgray/fonts/tinymce.ttf') format('truetype'),
+                 url('../wordpress/wp-includes/js/tinymce/skins/lightgray/fonts/tinymce.svg#tinymce') format('svg');
+            font-weight: normal;
+            font-style: normal;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .search {
+            max-width: 600px;
+            margin: 0 auto 30px;
+            position: sticky;
+            top: 20px;
+            z-index: 100;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .search input {
+            width: 100%;
+            padding: 12px 15px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .search input:focus {
+            border-color: #2276d2;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .icon-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .icon-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-color: #2276d2;
+        }
+        
+        .icon-card.copied {
+            background: #dff0d8;
+            border-color: #468847;
+        }
+        
+        .icon {
+            font-family: 'tinymce', Arial;
+            font-size: 48px;
+            line-height: 1;
+            color: #595959;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        
+        .icon-name {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            color: #2276d2;
+            word-break: break-all;
+            margin-top: 10px;
+            padding: 5px;
+            background: #f8f8f8;
+            border-radius: 4px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .copy-notice {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #468847;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s;
+            pointer-events: none;
+            font-weight: bold;
+        }
+        
+        .copy-notice.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .count {
+            text-align: center;
+            color: #999;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 TinyMCE Icons</h1>
+    <p class="subtitle">Все доступные иконки для кнопок редактора. Кликните на иконку чтобы скопировать название.</p>
+    
+    <div class="search">
+        <input type="text" id="searchInput" placeholder="🔍 Поиск иконок..." autofocus>
+    </div>
+    
+    <div class="count" id="count"></div>
+    
+    <div class="grid" id="iconsGrid"></div>
+    
+    <div class="copy-notice" id="copyNotice">✓ Скопировано!</div>
+    
+    <script>
+        const icons = [
+            { name: 'save', char: '\\e000' },
+            { name: 'newdocument', char: '\\e001' },
+            { name: 'fullpage', char: '\\e002' },
+            { name: 'alignleft', char: '\\e003' },
+            { name: 'aligncenter', char: '\\e004' },
+            { name: 'alignright', char: '\\e005' },
+            { name: 'alignjustify', char: '\\e006' },
+            { name: 'alignnone', char: '\\e003' },
+            { name: 'cut', char: '\\e007' },
+            { name: 'paste', char: '\\e008' },
+            { name: 'searchreplace', char: '\\e009' },
+            { name: 'bullist', char: '\\e00a' },
+            { name: 'numlist', char: '\\e00b' },
+            { name: 'indent', char: '\\e00c' },
+            { name: 'outdent', char: '\\e00d' },
+            { name: 'blockquote', char: '\\e00e' },
+            { name: 'undo', char: '\\e00f' },
+            { name: 'redo', char: '\\e010' },
+            { name: 'link', char: '\\e011' },
+            { name: 'unlink', char: '\\e012' },
+            { name: 'anchor', char: '\\e013' },
+            { name: 'image', char: '\\e014' },
+            { name: 'media', char: '\\e015' },
+            { name: 'help', char: '\\e016' },
+            { name: 'code', char: '\\e017' },
+            { name: 'insertdatetime', char: '\\e018' },
+            { name: 'preview', char: '\\e019' },
+            { name: 'forecolor', char: '\\e01a' },
+            { name: 'backcolor', char: '\\e01a' },
+            { name: 'table', char: '\\e01b' },
+            { name: 'hr', char: '\\e01c' },
+            { name: 'removeformat', char: '\\e01d' },
+            { name: 'subscript', char: '\\e01e' },
+            { name: 'superscript', char: '\\e01f' },
+            { name: 'charmap', char: '\\e020' },
+            { name: 'emoticons', char: '\\e021' },
+            { name: 'print', char: '\\e022' },
+            { name: 'fullscreen', char: '\\e023' },
+            { name: 'spellchecker', char: '\\e024' },
+            { name: 'nonbreaking', char: '\\e025' },
+            { name: 'template', char: '\\e026' },
+            { name: 'pagebreak', char: '\\e027' },
+            { name: 'restoredraft', char: '\\e028' },
+            { name: 'bold', char: '\\e02a' },
+            { name: 'italic', char: '\\e02b' },
+            { name: 'underline', char: '\\e02c' },
+            { name: 'strikethrough', char: '\\e02d' },
+            { name: 'visualchars', char: '\\e02e' },
+            { name: 'visualblocks', char: '\\e02e' },
+            { name: 'ltr', char: '\\e02f' },
+            { name: 'rtl', char: '\\e030' },
+            { name: 'copy', char: '\\e031' },
+            { name: 'resize', char: '\\e032' },
+            { name: 'browse', char: '\\e034' },
+            { name: 'pastetext', char: '\\e035' },
+            { name: 'rotateleft', char: '\\eaa8' },
+            { name: 'rotateright', char: '\\eaa9' },
+            { name: 'crop', char: '\\ee78' },
+            { name: 'editimage', char: '\\e915' },
+            { name: 'options', char: '\\ec6a' },
+            { name: 'flipv', char: '\\eaaa' },
+            { name: 'fliph', char: '\\eaac' },
+            { name: 'zoomin', char: '\\eb35' },
+            { name: 'zoomout', char: '\\eb36' },
+            { name: 'sun', char: '\\eccc' },
+            { name: 'moon', char: '\\eccd' },
+            { name: 'arrowleft', char: '\\edc0' },
+            { name: 'arrowright', char: '\\e93c' },
+            { name: 'drop', char: '\\e935' },
+            { name: 'contrast', char: '\\ecd4' },
+            { name: 'sharpen', char: '\\eba7' },
+            { name: 'resize2', char: '\\edf9' },
+            { name: 'orientation', char: '\\e601' },
+            { name: 'invert', char: '\\e602' },
+            { name: 'gamma', char: '\\e600' },
+            { name: 'remove', char: '\\ed6a' },
+            { name: 'tablerowprops', char: '\\e604' },
+            { name: 'tablecellprops', char: '\\e605' },
+            { name: 'table2', char: '\\e606' },
+            { name: 'tablemergecells', char: '\\e607' },
+            { name: 'tableinsertcolbefore', char: '\\e608' },
+            { name: 'tableinsertcolafter', char: '\\e609' },
+            { name: 'tableinsertrowbefore', char: '\\e60a' },
+            { name: 'tableinsertrowafter', char: '\\e60b' },
+            { name: 'tablesplitcells', char: '\\e60d' },
+            { name: 'tabledelete', char: '\\e60e' },
+            { name: 'tableleftheader', char: '\\e62a' },
+            { name: 'tabletopheader', char: '\\e62b' },
+            { name: 'tabledeleterow', char: '\\e800' },
+            { name: 'tabledeletecol', char: '\\e801' },
+            { name: 'codesample', char: '\\e603' },
+            { name: 'fill', char: '\\e902' },
+            { name: 'borderwidth', char: '\\e903' },
+            { name: 'line', char: '\\e904' },
+            { name: 'count', char: '\\e905' },
+            { name: 'translate', char: '\\e907' },
+            { name: 'drag', char: '\\e908' },
+            { name: 'home', char: '\\e90b' },
+            { name: 'upload', char: '\\e914' },
+            { name: 'bubble', char: '\\e91c' },
+            { name: 'user', char: '\\e91d' },
+            { name: 'lock', char: '\\e920' },
+            { name: 'unlock', char: '\\e927' },
+            { name: 'settings', char: '\\e928' },
+            { name: 'remove2', char: '\\e92a' },
+            { name: 'menu', char: '\\e92d' },
+            { name: 'warning', char: '\\e930' },
+            { name: 'question', char: '\\e931' },
+            { name: 'pluscircle', char: '\\e932' },
+            { name: 'info', char: '\\e933' },
+            { name: 'notice', char: '\\e934' },
+            { name: 'arrowup', char: '\\e93b' },
+            { name: 'arrowdown', char: '\\e93d' },
+            { name: 'arrowup2', char: '\\e93f' },
+            { name: 'arrowdown2', char: '\\e940' },
+            { name: 'menu2', char: '\\e941' },
+            { name: 'newtab', char: '\\e961' },
+            { name: 'a11y', char: '\\e900' },
+            { name: 'plus', char: '\\e938' },
+            { name: 'insert', char: '\\e93a' },
+            { name: 'minus', char: '\\e939' },
+            { name: 'books', char: '\\e911' },
+            { name: 'reload', char: '\\e906' },
+            { name: 'toc', char: '\\e901' },
+            { name: 'checkmark', char: '\\e033' },
+            { name: 'format-painter', char: '\\e909' },
+            { name: 'checkbox', char: '\\e033' },
+            { name: 'selected', char: '\\e033' }
+        ];
+        
+        const grid = document.getElementById('iconsGrid');
+        const searchInput = document.getElementById('searchInput');
+        const countEl = document.getElementById('count');
+        const copyNotice = document.getElementById('copyNotice');
+        
+        function createIconCard(icon) {
+            const card = document.createElement('div');
+            card.className = 'icon-card';
+            card.dataset.name = icon.name;
+            
+            const iconEl = document.createElement('div');
+            iconEl.className = 'icon';
+            iconEl.style.setProperty('content', `"${icon.char}"`);
+            iconEl.textContent = String.fromCharCode(parseInt(icon.char.replace('\\e', '0xe'), 16));
+            
+            const nameEl = document.createElement('div');
+            nameEl.className = 'icon-name';
+            nameEl.textContent = icon.name;
+            
+            card.appendChild(iconEl);
+            card.appendChild(nameEl);
+            
+            card.addEventListener('click', () => {
+                navigator.clipboard.writeText(icon.name).then(() => {
+                    card.classList.add('copied');
+                    setTimeout(() => card.classList.remove('copied'), 500);
+                    
+                    copyNotice.textContent = `✓ "${icon.name}" скопировано!`;
+                    copyNotice.classList.add('show');
+                    setTimeout(() => copyNotice.classList.remove('show'), 2000);
+                });
+            });
+            
+            return card;
+        }
+        
+        function renderIcons(filter = '') {
+            grid.innerHTML = '';
+            const filtered = filter 
+                ? icons.filter(icon => icon.name.toLowerCase().includes(filter.toLowerCase()))
+                : icons;
+            
+            filtered.forEach(icon => {
+                grid.appendChild(createIconCard(icon));
+            });
+            
+            countEl.textContent = `Показано ${filtered.length} из ${icons.length} иконок`;
+        }
+        
+        searchInput.addEventListener('input', (e) => {
+            renderIcons(e.target.value);
+        });
+        
+        // Initial render
+        renderIcons();
+    </script>
+</body>
+</html>
