@@ -4,16 +4,34 @@
 #
 # Флаги:
 #   --skip-migrations    Деплой без миграций (для первого запуска перед ручной настройкой Polylang)
+#   --skip-build         Пропустить сборку темы (npm run build:dev)
+#   --skip-bump          Пропустить увеличение версии темы
+#   --quick              Быстрый деплой: пропустить и build, и bump (эквивалент --skip-build --skip-bump)
 
 set -e
 
 # Парсинг аргументов
 SKIP_MIGRATIONS=false
+SKIP_BUILD=false
+SKIP_BUMP=false
 
 for arg in "$@"; do
     case $arg in
         --skip-migrations)
             SKIP_MIGRATIONS=true
+            shift
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --skip-bump)
+            SKIP_BUMP=true
+            shift
+            ;;
+        --quick)
+            SKIP_BUILD=true
+            SKIP_BUMP=true
             shift
             ;;
         *)
@@ -43,6 +61,14 @@ echo ""
 # Показываем активные флаги
 if [ "$SKIP_MIGRATIONS" = true ]; then
     echo -e "${YELLOW}⚠️  Mode: Deployment WITHOUT migrations${NC}"
+fi
+if [ "$SKIP_BUILD" = true ]; then
+    echo -e "${YELLOW}⚠️  Mode: SKIP theme build${NC}"
+fi
+if [ "$SKIP_BUMP" = true ]; then
+    echo -e "${YELLOW}⚠️  Mode: SKIP version bump${NC}"
+fi
+if [ "$SKIP_MIGRATIONS" = true ] || [ "$SKIP_BUILD" = true ] || [ "$SKIP_BUMP" = true ]; then
     echo ""
 fi
 
@@ -87,26 +113,39 @@ echo -e "${BLUE}═══ STEP 0/5: Version Bump & Build ═══${NC}"
 echo ""
 
 # Увеличиваем версию темы
-NEW_VERSION=$(bump_version)
-
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
+if [ "$SKIP_BUMP" = true ]; then
+    echo -e "${YELLOW}⏭  Skipping version bump${NC}"
+    # Получаем текущую версию без увеличения
+    THEME_DIR="${SCRIPT_DIR}/../wordpress/wp-content/themes/maslovka"
+    NEW_VERSION=$(grep "Version:" "${THEME_DIR}/style.css" | awk '{print $2}')
+    echo -e "  Current version: ${GREEN}${NEW_VERSION}${NC}"
+else
+    NEW_VERSION=$(bump_version)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${YELLOW}⚠️  Version bump failed, but continuing...${NC}"
+    fi
 fi
 
 echo ""
-echo -e "${BLUE}Building theme assets...${NC}"
 
-# Переходим в директорию темы для билда
-THEME_DIR="${SCRIPT_DIR}/../wordpress/wp-content/themes/maslovka"
-cd "${THEME_DIR}"
-
-# Запускаем production билд
-npm run build:dev
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓${NC} Theme build complete"
+if [ "$SKIP_BUILD" = true ]; then
+    echo -e "${YELLOW}⏭  Skipping theme build${NC}"
 else
-    echo -e "${YELLOW}⚠️  Theme build failed, but continuing...${NC}"
+    echo -e "${BLUE}Building theme assets...${NC}"
+    
+    # Переходим в директорию темы для билда
+    THEME_DIR="${SCRIPT_DIR}/../wordpress/wp-content/themes/maslovka"
+    cd "${THEME_DIR}"
+    
+    # Запускаем production билд
+    npm run build:dev
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓${NC} Theme build complete"
+    else
+        echo -e "${YELLOW}⚠️  Theme build failed, but continuing...${NC}"
+    fi
 fi
 
 echo ""
@@ -267,13 +306,13 @@ ssh "${DEV_SSH_USER}@${DEV_SSH_HOST}" << ENDSSH
 cd ${DEV_WP_PATH}
 
 echo "Flushing WordPress cache..."
-wp cache flush
+wp cache flush 2>/dev/null
 
 echo "Flushing rewrite rules..."
-wp rewrite flush
+wp rewrite flush 2>/dev/null
 
 # Кеш плагины (если есть)
-wp plugin is-active wp-super-cache 2>/dev/null && wp super-cache flush || true
+wp plugin is-active wp-super-cache 2>/dev/null && wp super-cache flush 2>/dev/null || true
 ENDSSH
 
 echo -e "${GREEN}✓${NC} Cache cleared"

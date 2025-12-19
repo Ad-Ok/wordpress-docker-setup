@@ -203,11 +203,11 @@ echo -e "${BLUE}[4/5]${NC} Clearing cache..."
 ssh "${SSH_USER}@${SSH_HOST}" << ENDSSH
 cd ${WP_PATH}
 
-wp cache flush
-wp rewrite flush
+wp cache flush 2>/dev/null
+wp rewrite flush 2>/dev/null
 
 # Кеш плагины
-wp plugin is-active wp-super-cache 2>/dev/null && wp super-cache flush
+wp plugin is-active wp-super-cache 2>/dev/null && wp super-cache flush 2>/dev/null || true
 ENDSSH
 
 echo -e "${GREEN}✓${NC} Cache cleared"
