@@ -64,13 +64,29 @@ get_next_migration_number() {
     local last_number=0
     
     if [ -d "$MIGRATIONS_DIR" ]; then
-        local last_migration=$(ls "${MIGRATIONS_DIR}"/[0-9][0-9][0-9]_*.sql 2>/dev/null | sort | tail -n 1)
+        # Получаем последние миграции как SQL, так и PHP
+        local last_sql=$(ls "${MIGRATIONS_DIR}"/[0-9][0-9][0-9]_*.sql 2>/dev/null | sort | tail -n 1)
+        local last_php=$(ls "${MIGRATIONS_DIR}"/[0-9][0-9][0-9]_*.php 2>/dev/null | sort | tail -n 1)
         
-        if [ -n "$last_migration" ]; then
-            last_number=$(basename "$last_migration" | cut -d'_' -f1 | sed 's/^0*//')
-            if [ -z "$last_number" ]; then
-                last_number=0
-            fi
+        # Извлекаем номера
+        local sql_number=0
+        local php_number=0
+        
+        if [ -n "$last_sql" ]; then
+            sql_number=$(basename "$last_sql" | cut -d'_' -f1 | sed 's/^0*//')
+            [ -z "$sql_number" ] && sql_number=0
+        fi
+        
+        if [ -n "$last_php" ]; then
+            php_number=$(basename "$last_php" | cut -d'_' -f1 | sed 's/^0*//')
+            [ -z "$php_number" ] && php_number=0
+        fi
+        
+        # Берем максимальный номер
+        if [ $sql_number -gt $php_number ]; then
+            last_number=$sql_number
+        else
+            last_number=$php_number
         fi
     fi
     
