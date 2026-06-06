@@ -47,6 +47,9 @@ mysql/data/
 *.swp
 *.swo
 
+# Claude Code (локальные настройки/разрешения, CLAUDE.md коммитим)
+.claude/settings.local.json
+
 # OS files
 .DS_Store
 Thumbs.db
